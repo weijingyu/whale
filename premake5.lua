@@ -8,7 +8,7 @@ workspace "whale"
 		"Dist"
 	}
 
-outputdir = "%{cfg.buildcfg}-%{cfg.system}"
+outputdir = "%{cfg.buildcfg}"
 
 project "whale"
 	location "whale"
@@ -32,7 +32,7 @@ project "whale"
 	filter "system:windows"
 		cppdialect "C++20"
 		staticruntime "On"
-		systemversion "10.0"
+		systemversion "latest"
 
 		defines
 		{
@@ -42,7 +42,7 @@ project "whale"
 
 		postbuildcommands
 		{
-			("{COPY} %{cfg.buildtarget.relpath} ../bin/" .. outputdir .. "/main/")
+			("{COPY} %{cfg.buildtarget.relpath} ../bin/" .. outputdir .. "/main")
 		}
 
 	filter "configurations:Debug"
@@ -85,7 +85,7 @@ project "main"
 	filter "system:windows"
 		cppdialect "C++20"
 		staticruntime "On"
-		systemversion "10.0"
+		systemversion "latest"
 
 		defines
 		{
