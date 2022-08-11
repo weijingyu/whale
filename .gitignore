@@ -9,3 +9,4 @@ bin-int
 .filters
 *.user
 *.vcxproj
+imgui.ini

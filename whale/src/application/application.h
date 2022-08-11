@@ -4,7 +4,7 @@
 
 namespace Whale {
 
-	class WH_API Application {
+	class Application {
 	public:
 		Application();
 		~Application();

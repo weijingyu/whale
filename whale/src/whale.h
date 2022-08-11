@@ -7,5 +7,5 @@
 #include "core/log.h"
 
 // ----- Entry Point -----
-#include "entryPoint.h"
+#include "entry_point.h"
 // -----------------------

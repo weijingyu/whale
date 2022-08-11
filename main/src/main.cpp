@@ -1,12 +1,21 @@
-#include "whale.h"
+#include <whale.h>
+#include <entry_point.h>
 
 
-class Sandbox : public Whale::Application {
-public:
-	Sandbox() {}
-	~Sandbox() {}
-};
+namespace Whale {
 
-Whale::Application* Whale::createApplication() {
-	return new Sandbox();
+	class Vesice : public Application
+	{
+	public:
+		Vesice()
+		{
+		}
+	};
+
+	Application* CreateApplication()
+	{
+
+		return new Vesice();
+	}
+
 }

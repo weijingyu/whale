@@ -1,16 +1,17 @@
 project "whale"
-    kind "StaticLib"
-    -- kind "SharedLib"
+    -- kind "StaticLib"
+    kind "SharedLib"
     language "C++"
     cppdialect "C++20"
+    staticruntime "off"
 
     targetdir ("%{wks.location}/bin/" .. outputdir .. "/%{prj.name}")
     objdir ("%{wks.location}/bin-int/" .. outputdir .. "/%{prj.name}")
 
     files
     {
-        "%{prj.name}/src/**.h",
-        "%{prj.name}/src/**.cpp"
+        "src/**.h",
+        "src/**.cpp"
     }
 
     includedirs
@@ -31,7 +32,6 @@ project "whale"
     {
         "glfw",
         "imgui",
-        "spdlog",
         "opengl32.lib"
     }
 
@@ -49,16 +49,16 @@ project "whale"
         }
 
     filter "configurations:Debug"
-        defines "WH_DEBUG"
+        defines "WHALE_DEBUG"
         runtime "Debug"
         symbols "On"
 
     filter "configurations:Release"
-        defines "WH_RELEASE"
+        defines "WHALE_RELEASE"
         runtime "Release"
         optimize "On"
 
     filter "configurations:Dist"
-        defines "WH_DIST"
+        defines "WHALE_DIST"
         runtime "Release"
         optimize "On"

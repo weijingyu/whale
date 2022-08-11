@@ -7,7 +7,7 @@
 
 namespace Whale {
 
-	class WH_API Log
+	class Log
 	{
 	public:
 		static void init();
