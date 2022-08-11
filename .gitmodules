@@ -1,3 +1,9 @@
 [submodule "whale/external/spdlog"]
 	path = whale/external/spdlog
 	url = https://github.com/gabime/spdlog
+[submodule "whale/external/glfw"]
+	path = whale/external/glfw
+	url = https://github.com/weijingyu/glfw
+[submodule "whale/external/imgui"]
+	path = whale/external/imgui
+	url = https://github.com/weijingyu/imgui
