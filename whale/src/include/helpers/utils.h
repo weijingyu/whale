@@ -15,7 +15,7 @@ namespace Whale {
 	class Timer
 	{
 	public:
-		static float getTime();
+		static double getTime();
 	};
 
 }

@@ -202,7 +202,7 @@ namespace Whale {
 	}
 }
 
-#define WH_PROFILE 0
+#define WH_PROFILE 1
 #if WH_PROFILE
 // Resolve which function signature macro will be used. Note that this only
 // is resolved when the (pre)compiler starts, so the syntax highlighting
@@ -226,9 +226,9 @@ namespace Whale {
 #endif
 
 #define WH_PROFILE_BEGIN_SESSION(name, filepath) ::Whale::Instrumentor::Get().BeginSession(name, filepath)
-#define WH_PROFILE_END_SESSION() ::Whale::Instrumentor::Get().EndSession()
+#define WH_PROFILE_END_SESSION() ::Whale::Instrumentor::Get().endSession()
 #define WH_PROFILE_SCOPE_LINE2(name, line) constexpr auto fixedName##line = ::Whale::InstrumentorUtils::CleanupOutputString(name, "__cdecl ");\
-											   ::Whale::InstrumentationTimer timer##line(fixedName##line.Data)
+											   ::Whale::InstrumentationTimer timer##line(fixedName##line.data)
 #define WH_PROFILE_SCOPE_LINE(name, line) WH_PROFILE_SCOPE_LINE2(name, line)
 #define WH_PROFILE_SCOPE(name) WH_PROFILE_SCOPE_LINE(name, __LINE__)
 #define WH_PROFILE_FUNCTION() WH_PROFILE_SCOPE(WH_FUNC_SIG)

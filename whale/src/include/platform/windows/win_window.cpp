@@ -47,15 +47,16 @@ namespace Whale {
 		}
 
 		{
-			const char* glsl_version = "#version 130";
-			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 			WH_PROFILE_SCOPE("glfwCreateWindow");
 			m_Window = glfwCreateWindow((int)props.Width, (int)props.Height, m_Data.Title.c_str(), nullptr, nullptr);
 			++s_GLFWWindowCount;
 		}
 
-
+		glfwMakeContextCurrent(m_Window);
+		WH_CORE_INFO("OpenGL Info:");
+		WH_CORE_INFO("  Vendor: {0}", glGetString(GL_VENDOR));
+		WH_CORE_INFO("  Renderer: {0}", glGetString(GL_RENDERER));
+		WH_CORE_INFO("  Version: {0}", glGetString(GL_VERSION));
 		glfwSetWindowUserPointer(m_Window, &m_Data);
 		SetVSync(true);
 
@@ -168,6 +169,7 @@ namespace Whale {
 		WH_PROFILE_FUNCTION();
 
 		glfwPollEvents();
+		glfwSwapBuffers(m_Window);
 	}
 
 	void WindowsWindow::SetVSync(bool enabled)
