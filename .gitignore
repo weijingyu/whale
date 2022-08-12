@@ -1,12 +1,14 @@
 # Directories
 .vs
-bin
-bin-int
+**/bin/
+bin-int/
 
 # Files
 
-*.user
-*.filters
-*.user
-*.vcxproj
+**.filters
+**.user
+**.vcxproj
+**.sln
+
 imgui.ini
+*.log
