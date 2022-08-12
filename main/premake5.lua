@@ -10,14 +10,15 @@ project "main"
     
     files
     {
-        "src/**.h",
-        "src/**.cpp"
+        "include/**.h",
+        "source/**.cpp"
     }
     
     includedirs
     {
+        "include",
         "%{wks.location}/whale/external/spdlog/include",
-        "%{wks.location}/whale/src",
+        "%{wks.location}/whale/src/include",
         "%{wks.location}/whale/external/glfw/include",
         "%{wks.location}/whale/external/imgui",
         "%{wks.location}/whale/external/imgui/backends"
@@ -36,7 +37,7 @@ project "main"
     
         defines
         {
-            "WHALE_PLATFORM_WINDOWS"
+            "WH_PLATFORM_WINDOWS"
         }
     
     filter "configurations:Debug"

@@ -3,9 +3,9 @@
 // For use by Whale applications
 
 #include "core/base.h"
-#include "application/application.h"
+#include "core/application.h"
 #include "core/log.h"
 
 // ----- Entry Point -----
-#include "entry_point.h"
+#include "core/entry_point.h"
 // -----------------------

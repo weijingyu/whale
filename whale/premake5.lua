@@ -1,6 +1,6 @@
 project "whale"
-    -- kind "StaticLib"
-    kind "SharedLib"
+    kind "StaticLib"
+    -- kind "SharedLib"
     language "C++"
     cppdialect "C++20"
     staticruntime "off"
@@ -16,7 +16,7 @@ project "whale"
 
     includedirs
     {
-        "src",
+        "src/include",
         "external/spdlog/include",
         "external/imgui",
         "external/glfw/include"
@@ -25,14 +25,15 @@ project "whale"
     defines
     {
         "_CRT_SECURE_NO_WARNINGS",
-        "GLFW_INCLUDE_NONE"
+        -- "GLFW_INCLUDE_NONE"
     }
 
     links
     {
         "glfw",
         "imgui",
-        "opengl32.lib"
+        "opengl32.lib",
+        -- "Dwmapi.lib"
     }
 
 
@@ -41,12 +42,13 @@ project "whale"
 
         defines
         {
+            "WH_PLATFORM_WINDOWS"
         }
 
-        postbuildcommands
-        {
-            ("{COPY} %{cfg.buildtarget.relpath} ../bin/" .. outputdir .. "/main/")
-        }
+        -- postbuildcommands
+        -- {
+        --     ("{COPY} %{cfg.buildtarget.relpath} ../bin/" .. outputdir .. "/main/")
+        -- }
 
     filter "configurations:Debug"
         defines "WHALE_DEBUG"
