@@ -1,27 +1,13 @@
-#include <whale.h>
-#include <core/entry_point.h>
+#include "window.h"
 
-//#include "EditorLayer.h"
+int main(int argc, char **argv) {
+    
 
-namespace Whale {
+    // Main window
+    {
+        Whale::Window window;
+        window.loop();
+    }
 
-	class Vesice : public Application
-	{
-	public:
-		Vesice(const ApplicationSpecification& spec)
-			: Application(spec)
-		{
-			//PushLayer(new EditorLayer());
-		}
-	};
-
-	Application* CreateApplication(ApplicationCommandLineArgs args)
-	{
-		ApplicationSpecification spec;
-		spec.Name = "Vesice";
-		spec.CommandLineArgs = args;
-
-		return new Vesice(spec);
-	}
-
+    return EXIT_SUCCESS;
 }

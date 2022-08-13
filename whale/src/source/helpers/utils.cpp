@@ -8,7 +8,7 @@
 
 namespace Whale {
 
-	float Timer::getTime()
+	double Timer::getTime()
 	{
 		return glfwGetTime();
 	}

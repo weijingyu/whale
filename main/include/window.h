@@ -6,7 +6,6 @@
 #include <list>
 #include <vector>
 
-
 struct GLFWwindow;
 struct ImGuiSettingsHandler;
 
@@ -20,13 +19,8 @@ namespace Whale {
 
         void loop();
 
-        static void initNative();
-
     private:
-        void setupNativeWindow();
-        void beginNativeWindowFrame();
-        void endNativeWindowFrame();
-        void drawTitleBar();
+        void setDarkThemeColors();
 
         void frameBegin();
         void frame();
@@ -39,20 +33,27 @@ namespace Whale {
         void exitGLFW();
         void exitImGui();
 
-        GLFWwindow* m_window = nullptr;
+
+        GLFWwindow *m_window = nullptr;
 
         std::string m_windowTitle;
 
         double m_lastFrameTime = 0;
 
+        // ImGui::Texture m_logoTexture = { nullptr };
+
         std::list<std::string> m_popupsToOpen;
         std::vector<int> m_pressedKeys;
+
+        std::filesystem::path m_imguiSettingsPath = "imgui.ini";
 
         bool m_mouseButtonDown = false;
 
         bool m_hadEvent = false;
         bool m_frameRateTemporarilyUnlocked = false;
         double m_frameRateUnlockTime = 0;
+
+        bool show_demo_window;
     };
 
 }
