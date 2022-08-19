@@ -16,105 +16,21 @@
 
 #include <GLFW/glfw3.h>
 
-#include <spdlog/spdlog.h>
 
-namespace Whale {
+#include <fs.h>
+#include <log.h>
+
+namespace whale {
 
     using namespace std::literals::chrono_literals;
-
-    // static void signalHandler(int signalNumber) {
-    //     // log::fatal("Terminating with signal {}", signalNumber);
-
-    //     // EventManager::post<EventAbnormalTermination>(signalNumber);
-
-    //     if (std::uncaught_exceptions() > 0) {
-    //         log::fatal("Uncaught exception thrown!");
-    //     }
-
-    //     // Let's not loop on this...
-    //     std::signal(signalNumber, nullptr);
-
-    //     #if defined(DEBUG)
-    //         assert(false);
-    //     #else
-    //         std::raise(signalNumber);
-    //     #endif
-    // };
 
     Window::Window() {
 
         this->initGLFW();
         this->initImGui();
-        // this->setupNativeWindow();
-
-        // Initialize default theme
-        // EventManager::post<RequestChangeTheme>(1);
-
-        // EventManager::subscribe<RequestCloseImHex>(this, [this](bool noQuestions) {
-        //     glfwSetWindowShouldClose(this->m_window, GLFW_TRUE);
-
-        //     if (!noQuestions)
-        //         EventManager::post<EventWindowClosing>(this->m_window);
-        // });
-
-        // EventManager::subscribe<RequestChangeWindowTitle>(this, [this](const std::string &windowTitle) {
-        //     std::string title = "ImHex";
-
-        //     if (ImHexApi::Provider::isValid()) {
-        //         auto provider = ImHexApi::Provider::get();
-        //         if (!windowTitle.empty())
-        //             title += " - " + windowTitle;
-
-        //         if (provider->isDirty())
-        //             title += " (*)";
-
-        //         if (!provider->isWritable())
-        //             title += " (Read Only)";
-        //     }
-
-        //     this->m_windowTitle = title;
-        //     glfwSetWindowTitle(this->m_window, title.c_str());
-        // });
-
-        // constexpr auto CrashBackupFileName = "crash_backup.hexproj";
-
-        // EventManager::subscribe<EventAbnormalTermination>(this, [this, CrashBackupFileName](int) {
-        //     ImGui::SaveIniSettingsToDisk(this->m_imguiSettingsPath.string().c_str());
-
-        //     if (!ImHexApi::Provider::isDirty())
-        //         return;
-
-        //     for (const auto &path : fs::getDefaultPaths(fs::ImHexPath::Config)) {
-        //         if (ProjectFile::store((std::fs::path(path) / CrashBackupFileName).string()))
-        //             break;
-        //     }
-        // });
-
-        // EventManager::subscribe<RequestOpenPopup>(this, [this](auto name) {
-        //     this->m_popupsToOpen.push_back(name);
-        // });
-
-        // std::signal(SIGSEGV, signalHandler);
-        // std::signal(SIGILL, signalHandler);
-        // std::signal(SIGABRT, signalHandler);
-        // std::signal(SIGFPE, signalHandler);
-        // std::set_terminate([]{ signalHandler(SIGABRT); });
-
-        // auto imhexLogo      = romfs::get("logo.png");
-        // this->m_logoTexture = ImGui::LoadImageFromMemory(reinterpret_cast<const ImU8 *>(imhexLogo.data()), imhexLogo.size());
-
-        // ContentRegistry::Settings::store();
-        // EventManager::post<EventSettingsChanged>();
-        // EventManager::post<EventWindowInitialized>();
     }
 
     Window::~Window() {
-        // EventManager::unsubscribe<EventProviderDeleted>(this);
-        // EventManager::unsubscribe<RequestCloseImHex>(this);
-        // EventManager::unsubscribe<RequestChangeWindowTitle>(this);
-        // EventManager::unsubscribe<EventAbnormalTermination>(this);
-        // EventManager::unsubscribe<RequestOpenPopup>(this);
-
         this->exitImGui();
         this->exitGLFW();
     }
@@ -127,7 +43,7 @@ namespace Whale {
             } else {
                 glfwPollEvents();
 
-                 bool frameRateUnlocked = ImGui::IsPopupOpen(ImGuiID(0), ImGuiPopupFlags_AnyPopupId) /* || Task::getRunningTaskCount() > 0 */ || this->m_mouseButtonDown || this->m_hadEvent || !this->m_pressedKeys.empty();
+                 bool frameRateUnlocked = ImGui::IsPopupOpen(ImGuiID(0), ImGuiPopupFlags_AnyPopupId) || this->m_mouseButtonDown || this->m_hadEvent || !this->m_pressedKeys.empty();
                  const double timeout = std::max(0.0, (1.0 / 5.0) - (glfwGetTime() - this->m_lastFrameTime));
 
                  if ((this->m_lastFrameTime - this->m_frameRateUnlockTime) > 5 && this->m_frameRateTemporarilyUnlocked && !frameRateUnlocked) {
@@ -150,8 +66,9 @@ namespace Whale {
             this->frameEnd();
 
             // const auto targetFps = ImHexApi::System::getTargetFPS();
-            // if (targetFps <= 200)
-            //     std::this_thread::sleep_for(std::chrono::milliseconds(u64((this->m_lastFrameTime + 1 / targetFps - glfwGetTime()) * 1000)));
+            static float targetFPS = 60.0F;
+            if (targetFPS <= 200)
+                std::this_thread::sleep_for(std::chrono::milliseconds((unsigned long long)((this->m_lastFrameTime + 1 / targetFPS - glfwGetTime()) * 1000)));
 
             this->m_lastFrameTime = glfwGetTime();
 
@@ -159,7 +76,7 @@ namespace Whale {
         }
     }
 
-    
+
 
     void Window::frameBegin() {
 
@@ -169,14 +86,11 @@ namespace Whale {
 
         ImGuiViewport *viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
-        ImGui::SetNextWindowSize(viewport->Size);
+        ImGui::SetNextWindowSize(viewport->Size - ImVec2(0, ImGui::GetTextLineHeightWithSpacing()));
         ImGui::SetNextWindowViewport(viewport->ID);
-        //ImGui::SetNextWindowViewport(viewport->ID - ImGui::GetStyle().FramePadding.y);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-
-        //ImGuiWindowFlags windowFlags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
         ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar |
                                        ImGuiWindowFlags_NoResize |
@@ -185,27 +99,27 @@ namespace Whale {
                                        ImGuiWindowFlags_NoNavFocus |
                                        ImGuiWindowFlags_NoBackground |
                                        ImGuiWindowFlags_NoDocking |
-                                       ImGuiWindowFlags_MenuBar |
+                                       // ImGuiWindowFlags_MenuBar |
                                        ImGuiWindowFlags_NoCollapse;
 
-        //ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-        static bool dockSpaceOpen = true;
 
         if (ImGui::Begin("DockSpaceWindow", nullptr, windowFlags)) {
 
             ImGui::PopStyleVar();
 
             ImGuiID dockSpaceId = ImGui::GetID("WhaleDockSpace");
-            
             if (ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode)) {
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
 
-                if (ImGui::BeginMenuBar()) {
+                if (ImGui::BeginMainMenuBar()) {
 
                     if (ImGui::BeginMenu("File")) {
                         if (ImGui::MenuItem("Open Log File")) {
-
+                            fs::openFileBrowser(fs::DialogMode::Open, {}, [this](const std::fs::path &path) {
+                                this->m_busLog = new BusLog(path);
+                            });
                         }
                         ImGui::EndMenu();
                     }
@@ -215,77 +129,112 @@ namespace Whale {
                     }
 
                     if (ImGui::BeginMenu("View")) {
-                        ImGui::MenuItem("ImGui Demo");
+                        if (ImGui::MenuItem("Show Demo Window", nullptr, &this->m_showDemoWindow));
+                        if (ImGui::MenuItem("Show Sample Window", nullptr, &this->m_showTraceBrowser));
                         ImGui::EndMenu();
                     }
 
-                    ImGui::EndMenuBar();
+                    if (ImGui::BeginMenu("Theme")) {
+                        if (ImGui::MenuItem("Light")) {
+                            ImGui::StyleColorsLight();
+                        }
+                        if (ImGui::MenuItem("Dark")) {
+                            ImGui::StyleColorsDark();
+                            setDarkThemeColors();
+                        }
+                        if (ImGui::MenuItem("Classic")) {
+                            ImGui::StyleColorsClassic();
+                        }
+                        ImGui::EndMenu();
+                    }
+
+                    ImGui::EndMainMenuBar();
                 }
                 ImGui::PopStyleVar();
             }
 
            ImGui::End();
         }
-        
+
         ImGui::PopStyleVar(2);
-
-        /*this->m_popupsToOpen.remove_if([](const auto &name) {
-            if (ImGui::IsPopupOpen(name.c_str()))
-                return true;
-            else
-                ImGui::OpenPopup(name.c_str());
-
-            return false;
-        });*/
-
-        // EventManager::post<EventFrameBegin>();
     }
 
     void Window::frame() {
 
 
         auto &io = ImGui::GetIO();
-        /*
-        for (auto &[name, view] : ContentRegistry::Views::getEntries()) {
-            ImGui::GetCurrentContext()->NextWindowData.ClearFlags();
 
-            view->drawAlwaysVisible();
+        if (this->m_showDemoWindow) {
+            ImGui::ShowDemoWindow(&this->m_showDemoWindow);
+        }
+        if (this->m_showTraceBrowser) {
+           this->showTraceBrowser(&this->m_showTraceBrowser);
+        }
+    }
 
-            if (!view->shouldProcess())
-                continue;
+    // Demonstrate create a window with multiple child windows.
+    void Window::showTraceBrowser(bool* p_open)
+    {
+        static std::string selectedEcu;
+        //ImGui::SetNextWindowSize(ImVec2(500, 440), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("ECU List", nullptr, true))
+        {
+            // Left
+            static int selected = 0;
+            if (this->m_busLog != nullptr) {
+                {
+                    ImGui::BeginChild("left pane", ImVec2(0, 0), true);
 
-            if (view->isAvailable()) {
-                ImGui::SetNextWindowSizeConstraints(scaled(view->getMinSize()), scaled(view->getMaxSize()));
-                view->drawContent();
-            }
-
-            if (view->getWindowOpenState()) {
-                auto window    = ImGui::FindWindowByName(view->getName().c_str());
-                bool hasWindow = window != nullptr;
-                bool focused   = false;
-
-
-                if (hasWindow && !(window->Flags & ImGuiWindowFlags_Popup)) {
-                    ImGui::Begin(View::toWindowName(name).c_str());
-
-                    focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows | ImGuiFocusedFlags_NoPopupHierarchy);
-                    ImGui::End();
+                    for (auto& ecuName : this->m_busLog->getEcuList()) {
+                        if (ImGui::Selectable(ecuName.c_str(), selectedEcu == ecuName)) {
+                            selectedEcu = ecuName;
+                        }
+                    }
+                    ImGui::EndChild();
                 }
+                ImGui::SameLine();
+            }
+            ImGui::End();
+        }
 
-                for (const auto &key : this->m_pressedKeys) {
-                    ShortcutManager::process(view, io.KeyCtrl, io.KeyAlt, io.KeyShift, io.KeySuper, focused, key);
+        if (ImGui::Begin("Trace Browser"), nullptr, true) {
+
+            // Right
+            if (selectedEcu != "") {
+                auto ecuTrace = this->m_busLog->ecuTrace(selectedEcu);
+                static ImGuiTableFlags flags = ImGuiTableFlags_Resizable |
+                                               ImGuiTableFlags_Reorderable |
+                                               ImGuiTableFlags_Hideable |
+                                               ImGuiTableFlags_RowBg |
+                                               ImGuiTableFlags_BordersOuter |
+                                               ImGuiTableFlags_BordersH |
+                                               ImGuiTableFlags_BordersV;
+                
+                if (ImGui::BeginTable("TraceTable", 4, flags)) {
+                    ImGui::TableSetupColumn("Time");
+                    ImGui::TableSetupColumn("ID");
+                    ImGui::TableSetupColumn("Trace");
+                    ImGui::TableSetupColumn("Text");
+                    ImGui::TableHeadersRow();
+
+                    for (auto &trace: ecuTrace.traces) {
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::Text(trace.time.c_str());
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::Text(trace.id.c_str());
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::Text(trace.trace.c_str());
+                        ImGui::TableSetColumnIndex(3);
+                        ImGui::Text(trace.hexTrace.c_str());
+                    }
+                    ImGui::EndTable();
                 }
             }
         }
-        */
-
-        ImGui::ShowDemoWindow(&show_demo_window);
-        //for (const auto &key : this->m_pressedKeys) {
-        //    // ShortcutManager::processGlobals(io.KeyCtrl, io.KeyAlt, io.KeyShift, io.KeySuper, key);
-        //}
-
-        //this->m_pressedKeys.clear();
+        ImGui::End();
     }
+
 
     void Window::frameEnd() {
         // EventManager::post<EventFrameEnd>();
@@ -300,7 +249,7 @@ namespace Whale {
         glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        setDarkThemeColors();
+        // setDarkThemeColors();
 
         GLFWwindow *backup_current_context = glfwGetCurrentContext();
         ImGui::UpdatePlatformWindows();
@@ -312,11 +261,11 @@ namespace Whale {
 
     void Window::initGLFW() {
         glfwSetErrorCallback([](int error, const char *desc) {
-            spdlog::error("GLFW Error [{}] : {}", error, desc);
+            WH_ERROR("GLFW Error [{}] : {}", error, desc);
         });
 
         if (!glfwInit()) {
-            spdlog::critical("Failed to initialize GLFW!");
+            WH_CRITICAL("Failed to initialize GLFW!");
             std::abort();
         }
 
@@ -327,9 +276,9 @@ namespace Whale {
         glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
-        this->m_windowTitle = "Whale";
+        this->m_windowTitle = "Hey, Whale";
         this->m_window = glfwCreateWindow(1280, 720, this->m_windowTitle.c_str(), nullptr, nullptr);
-
+        WH_INFO("GLFW window created.");
         glfwSetWindowUserPointer(this->m_window, this);
 
         if (this->m_window == nullptr) {
@@ -339,129 +288,6 @@ namespace Whale {
 
         glfwMakeContextCurrent(this->m_window);
         glfwSwapInterval(1);
-
-         /*GLFWmonitor *monitor = glfwGetPrimaryMonitor();
-         if (monitor != nullptr) {
-             const GLFWvidmode *mode = glfwGetVideoMode(monitor);
-             if (mode != nullptr) {
-                 int monitorX, monitorY;
-                 glfwGetMonitorPos(monitor, &monitorX, &monitorY);
-
-                 int windowWidth, windowHeight;
-                 glfwGetWindowSize(this->m_window, &windowWidth, &windowHeight);
-
-                 glfwSetWindowPos(this->m_window, monitorX + (mode->width - windowWidth) / 2, monitorY + (mode->height - windowHeight) / 2);
-             }
-         }*/
-
-        //{
-        //    int x = 0, y = 0;
-        //    glfwGetWindowPos(this->m_window, &x, &y);
-
-        //    // ImHexApi::System::impl::setMainWindowPosition(x, y);
-        //}
-
-        //{
-        //    int width = 0, height = 0;
-        //    glfwGetWindowSize(this->m_window, &width, &height);
-        //    glfwSetWindowSize(this->m_window, width, height);
-        //    // ImHexApi::System::impl::setMainWindowSize(width, height);
-        //}
-
-        //glfwSetWindowPosCallback(this->m_window, [](GLFWwindow *window, int x, int y) {
-        //    // ImHexApi::System::impl::setMainWindowPosition(x, y);
-
-        //    if (auto g = ImGui::GetCurrentContext(); g == nullptr || g->WithinFrameScope) return;
-
-        //    auto win = static_cast<Window *>(glfwGetWindowUserPointer(window));
-        //    win->frameBegin();
-        //    win->frame();
-        //    win->frameEnd();
-        //    win->processEvent();
-        //});
-
-        //glfwSetWindowSizeCallback(this->m_window, [](GLFWwindow *window, int width, int height) {
-        //    // if (!glfwGetWindowAttrib(window, GLFW_ICONIFIED))
-        //    //     ImHexApi::System::impl::setMainWindowSize(width, height);
-
-        //    if (auto g = ImGui::GetCurrentContext(); g == nullptr || g->WithinFrameScope) return;
-
-        //    auto win = static_cast<Window *>(glfwGetWindowUserPointer(window));
-        //    win->frameBegin();
-        //    win->frame();
-        //    win->frameEnd();
-        //    win->processEvent();
-        //});
-
-        //glfwSetMouseButtonCallback(this->m_window, [](GLFWwindow *window, int button, int action, int mods) {
-        //    // hex::unused(button, mods);
-        //    (void) button;
-        //    (void) mods;
-
-        //    auto win = static_cast<Window *>(glfwGetWindowUserPointer(window));
-
-        //    if (action == GLFW_PRESS)
-        //        win->m_mouseButtonDown = true;
-        //    else if (action == GLFW_RELEASE)
-        //        win->m_mouseButtonDown = false;
-        //    win->processEvent();
-        //});
-
-        //glfwSetKeyCallback(this->m_window, [](GLFWwindow *window, int key, int scancode, int action, int mods) {
-        //    // hex::unused(mods);
-        //    (void) mods;
-
-        //    auto keyName = glfwGetKeyName(key, scancode);
-        //    if (keyName != nullptr)
-        //        key = std::toupper(keyName[0]);
-
-        //    auto win = static_cast<Window *>(glfwGetWindowUserPointer(window));
-
-        //    if (action == GLFW_PRESS || action == GLFW_REPEAT) {
-        //        win->m_pressedKeys.push_back(key);
-        //    }
-        //    win->processEvent();
-        //});
-
-        //glfwSetDropCallback(this->m_window, [](GLFWwindow *, int count, const char **paths) {
-        //    if (count != 1)
-        //        return;
-
-        //    for (int i = 0; i < count; i++) {
-        //        auto path = std::filesystem::path(reinterpret_cast<const char *>(paths[i]));
-
-        //        // bool handled = false;
-        //        // for (const auto &[extensions, handler] : ContentRegistry::FileHandler::getEntries()) {
-        //        //     for (const auto &extension : extensions) {
-        //        //         if (path.extension() == extension) {
-        //        //             if (!handler(path))
-        //        //                 log::error("Handler for extensions '{}' failed to process file!", extension);
-
-        //        //             handled = true;
-        //        //             break;
-        //        //         }
-        //        //     }
-        //        // }
-        //        
-        //        // set file path to this
-
-        //        // if (!handled)
-        //        //     EventManager::post<RequestOpenFile>(path);
-        //    }
-        //});
-
-        //glfwSetCursorPosCallback(this->m_window, [](GLFWwindow *window, double x, double y) {
-        //    // hex::unused(x, y);
-        //    (void) x;
-        //    (void) y;
-
-        //    auto win = static_cast<Window *>(glfwGetWindowUserPointer(window));
-        //    win->processEvent();
-        //});
-
-        //glfwSetWindowCloseCallback(this->m_window, [](GLFWwindow *window) {
-        //    // EventManager::post<EventWindowClosing>(window);
-        //});
 
         glfwSetWindowSizeLimits(this->m_window, 720, 480, GLFW_DONT_CARE, GLFW_DONT_CARE);
 
@@ -479,9 +305,13 @@ namespace Whale {
 
         ImGuiIO &io       = ImGui::GetIO();
 
-        float fontSize = 18.0f;// *2.0f;
-        io.Fonts->AddFontFromFileTTF("assets/fonts/opensans/OpenSans-Bold.ttf", fontSize);
-        io.FontDefault = io.Fonts->AddFontFromFileTTF("assets/fonts/opensans/OpenSans-Regular.ttf", fontSize);
+        float fontSize = 16.0f;// *2.0f;
+        // io.Fonts->AddFontFromFileTTF("../assets/fonts/Ubuntu-Light.ttf", fontSize);
+        // io.Fonts->AddFontFromFileTTF("../assets/fonts/CascadiaMono-Light.ttf", fontSize);
+        // io.Fonts->AddFontFromFileTTF("../assets/fonts/opensans/OpenSans-Regular.ttf", fontSize);
+        // io.Fonts->AddFontFromFileTTF("../assets/fonts/opensans/OpenSans-Light.ttf", fontSize);
+        // io.FontDefault = io.Fonts->AddFontFromFileTTF("assets/fonts/opensans/OpenSans-Regular.ttf", fontSize);
+        // ImFont* font = io.Fonts->AddFontFromFileTTF("../assets/fonts/opensans/OpenSans-Regular.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
 
 
         ImGuiStyle &style = ImGui::GetStyle();
@@ -509,9 +339,9 @@ namespace Whale {
             io.Fonts->SetTexID(reinterpret_cast<ImTextureID>(tex));
         }
 
-        style.WindowMenuButtonPosition = ImGuiDir_None;
+        // style.WindowMenuButtonPosition = ImGuiDir_None;
         style.IndentSpacing            = 10.0F;
-        
+
         ImGui_ImplGlfw_InitForOpenGL(this->m_window, true);
 
         ImGui_ImplOpenGL3_Init("#version 410");
@@ -561,6 +391,10 @@ namespace Whale {
         colors[ImGuiCol_TitleBg] = ImVec4{ 0.15f, 0.1505f, 0.151f, 1.0f };
         colors[ImGuiCol_TitleBgActive] = ImVec4{ 0.15f, 0.1505f, 0.151f, 1.0f };
         colors[ImGuiCol_TitleBgCollapsed] = ImVec4{ 0.15f, 0.1505f, 0.151f, 1.0f };
+    }
+
+    void Window::loadLogFile(const std::filesystem::path &logFilePath) {
+        this->m_busLog = new BusLog(logFilePath);
     }
 
 }

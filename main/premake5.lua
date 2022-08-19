@@ -18,18 +18,20 @@ project "main"
     {
         "include",
         "%{wks.location}/whale/external/spdlog/include",
-        "%{wks.location}/whale/src/include",
+        -- "%{wks.location}/whale/src/include",
         "%{wks.location}/whale/external/glfw/include",
         "%{wks.location}/whale/external/imgui",
-        "%{wks.location}/whale/external/imgui/backends"
+        "%{wks.location}/whale/external/imgui/backends",
+        "%{wks.location}/whale/external/nativefiledialog-extended/src/include",
     }
     
     links
     {
-        "whale"
-        -- "imgui"
-        -- "glfw",
-        -- "opengl32.lib"
+        -- "whale"
+        "imgui",
+        "glfw",
+        "nfd",
+        "opengl32.lib"
     }
     
     filter "system:windows"

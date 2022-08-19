@@ -1,5 +1,7 @@
 #pragma once
 
+#include "bus_log.h"
+
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -10,7 +12,7 @@ struct GLFWwindow;
 struct ImGuiSettingsHandler;
 
 
-namespace Whale {
+namespace whale {
 
     class Window {
     public:
@@ -33,6 +35,9 @@ namespace Whale {
         void exitGLFW();
         void exitImGui();
 
+        void showTraceBrowser(bool* p_open);
+        void loadLogFile(const std::filesystem::path &logFilePath);
+
 
         GLFWwindow *m_window = nullptr;
 
@@ -53,7 +58,10 @@ namespace Whale {
         bool m_frameRateTemporarilyUnlocked = false;
         double m_frameRateUnlockTime = 0;
 
-        bool show_demo_window;
+        bool m_showDemoWindow;
+        bool m_showTraceBrowser;
+
+        BusLog* m_busLog = nullptr;
     };
 
 }
