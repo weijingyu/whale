@@ -4,16 +4,16 @@ project "main"
     language "C++"
     cppdialect "C++20"
     staticruntime "off"
-    
+
     targetdir ("%{wks.location}/bin/" .. outputdir .. "/%{prj.name}")
     objdir ("%{wks.location}/bin-int/" .. outputdir .. "/%{prj.name}")
-    
+
     files
     {
         "include/**.h",
         "source/**.cpp"
     }
-    
+
     includedirs
     {
         "include",
@@ -23,35 +23,37 @@ project "main"
         "%{wks.location}/whale/external/imgui",
         "%{wks.location}/whale/external/imgui/backends",
         "%{wks.location}/whale/external/nativefiledialog-extended/src/include",
+        "%{wks.location}/whale/external/pugixml/src"
     }
-    
+
     links
     {
         -- "whale"
         "imgui",
         "glfw",
         "nfd",
+        "pugixml",
         "opengl32.lib"
     }
-    
+
     filter "system:windows"
         systemversion "latest"
-    
+
         defines
         {
             "WH_PLATFORM_WINDOWS"
         }
-    
+
     filter "configurations:Debug"
         defines "WHALE_DEBUG"
         runtime "Debug"
         symbols "On"
-    
+
     filter "configurations:Release"
         defines "WHALE_RELEASE"
         runtime "Release"
         optimize "On"
-    
+
     filter "configurations:Dist"
         defines "WHALE_DIST"
         runtime "Release"

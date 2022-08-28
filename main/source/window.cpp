@@ -28,6 +28,8 @@ namespace whale {
 
         this->initGLFW();
         this->initImGui();
+
+        m_pdx = &pdx::PDX::get();
     }
 
     Window::~Window() {
@@ -40,24 +42,26 @@ namespace whale {
         while (!glfwWindowShouldClose(this->m_window)) {
             if (!glfwGetWindowAttrib(this->m_window, GLFW_VISIBLE) || glfwGetWindowAttrib(this->m_window, GLFW_ICONIFIED)) {
                 glfwWaitEvents();
-            } else {
+            }
+            else {
                 glfwPollEvents();
 
-                 bool frameRateUnlocked = ImGui::IsPopupOpen(ImGuiID(0), ImGuiPopupFlags_AnyPopupId) || this->m_mouseButtonDown || this->m_hadEvent || !this->m_pressedKeys.empty();
-                 const double timeout = std::max(0.0, (1.0 / 5.0) - (glfwGetTime() - this->m_lastFrameTime));
+                bool frameRateUnlocked = ImGui::IsPopupOpen(ImGuiID(0), ImGuiPopupFlags_AnyPopupId) || this->m_mouseButtonDown || this->m_hadEvent || !this->m_pressedKeys.empty();
+                const double timeout = std::max(0.0, (1.0 / 5.0) - (glfwGetTime() - this->m_lastFrameTime));
 
-                 if ((this->m_lastFrameTime - this->m_frameRateUnlockTime) > 5 && this->m_frameRateTemporarilyUnlocked && !frameRateUnlocked) {
-                     this->m_frameRateTemporarilyUnlocked = false;
-                 }
+                if ((this->m_lastFrameTime - this->m_frameRateUnlockTime) > 5 && this->m_frameRateTemporarilyUnlocked && !frameRateUnlocked) {
+                    this->m_frameRateTemporarilyUnlocked = false;
+                }
 
-                 if (frameRateUnlocked || this->m_frameRateTemporarilyUnlocked) {
-                     if (!this->m_frameRateTemporarilyUnlocked) {
-                         this->m_frameRateTemporarilyUnlocked = true;
-                         this->m_frameRateUnlockTime = this->m_lastFrameTime;
-                     }
-                 } else {
-                     glfwWaitEventsTimeout(timeout);
-                 }
+                if (frameRateUnlocked || this->m_frameRateTemporarilyUnlocked) {
+                    if (!this->m_frameRateTemporarilyUnlocked) {
+                        this->m_frameRateTemporarilyUnlocked = true;
+                        this->m_frameRateUnlockTime = this->m_lastFrameTime;
+                    }
+                }
+                else {
+                    glfwWaitEventsTimeout(timeout);
+                }
             }
 
 
@@ -84,7 +88,7 @@ namespace whale {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        ImGuiViewport *viewport = ImGui::GetMainViewport();
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
         ImGui::SetNextWindowSize(viewport->Size - ImVec2(0, ImGui::GetTextLineHeightWithSpacing()));
         ImGui::SetNextWindowViewport(viewport->ID);
@@ -93,14 +97,14 @@ namespace whale {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
         ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar |
-                                       ImGuiWindowFlags_NoResize |
-                                       ImGuiWindowFlags_NoMove |
-                                       ImGuiWindowFlags_NoBringToFrontOnFocus |
-                                       ImGuiWindowFlags_NoNavFocus |
-                                       ImGuiWindowFlags_NoBackground |
-                                       ImGuiWindowFlags_NoDocking |
-                                       // ImGuiWindowFlags_MenuBar |
-                                       ImGuiWindowFlags_NoCollapse;
+            ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoBringToFrontOnFocus |
+            ImGuiWindowFlags_NoNavFocus |
+            ImGuiWindowFlags_NoBackground |
+            ImGuiWindowFlags_NoDocking |
+            // ImGuiWindowFlags_MenuBar |
+            ImGuiWindowFlags_NoCollapse;
 
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
@@ -117,20 +121,26 @@ namespace whale {
 
                     if (ImGui::BeginMenu("File")) {
                         if (ImGui::MenuItem("Open Log File")) {
-                            fs::openFileBrowser(fs::DialogMode::Open, {}, [this](const std::fs::path &path) {
+                            fs::openFileBrowser(fs::DialogMode::Open, {}, [this](const std::fs::path& path) {
                                 this->m_busLog = new BusLog(path);
-                            });
+                                });
                         }
                         ImGui::EndMenu();
                     }
 
                     if (ImGui::BeginMenu("Project")) {
+                        if (ImGui::MenuItem("Import PDX project...")) {
+                            fs::openFileBrowser(fs::DialogMode::Folder, {}, [this](const std::fs::path& path) {
+                                this->m_pdx->init(path);
+                                });
+                        }
                         ImGui::EndMenu();
                     }
 
                     if (ImGui::BeginMenu("View")) {
                         if (ImGui::MenuItem("Show Demo Window", nullptr, &this->m_showDemoWindow));
-                        if (ImGui::MenuItem("Show Sample Window", nullptr, &this->m_showTraceBrowser));
+                        if (ImGui::MenuItem("Trace Browser", nullptr, &this->m_showTraceBrowser));
+                        if (ImGui::MenuItem("Odx Browser", nullptr, &this->m_showOdxBrowser));
                         ImGui::EndMenu();
                     }
 
@@ -153,7 +163,7 @@ namespace whale {
                 ImGui::PopStyleVar();
             }
 
-           ImGui::End();
+            ImGui::End();
         }
 
         ImGui::PopStyleVar(2);
@@ -162,13 +172,16 @@ namespace whale {
     void Window::frame() {
 
 
-        auto &io = ImGui::GetIO();
+        auto& io = ImGui::GetIO();
 
         if (this->m_showDemoWindow) {
             ImGui::ShowDemoWindow(&this->m_showDemoWindow);
         }
         if (this->m_showTraceBrowser) {
-           this->showTraceBrowser(&this->m_showTraceBrowser);
+            this->showTraceBrowser(&this->m_showTraceBrowser);
+        }
+        if (this->m_showOdxBrowser) {
+            this->showOdxBrowser(&this->m_showOdxBrowser);
         }
     }
 
@@ -203,13 +216,13 @@ namespace whale {
             if (selectedEcu != "") {
                 auto ecuTrace = this->m_busLog->ecuTrace(selectedEcu);
                 static ImGuiTableFlags flags = ImGuiTableFlags_Resizable |
-                                               ImGuiTableFlags_Reorderable |
-                                               ImGuiTableFlags_Hideable |
-                                               ImGuiTableFlags_RowBg |
-                                               ImGuiTableFlags_BordersOuter |
-                                               ImGuiTableFlags_BordersH |
-                                               ImGuiTableFlags_BordersV;
-                
+                    ImGuiTableFlags_Reorderable |
+                    ImGuiTableFlags_Hideable |
+                    ImGuiTableFlags_RowBg |
+                    ImGuiTableFlags_BordersOuter |
+                    ImGuiTableFlags_BordersH |
+                    ImGuiTableFlags_BordersV;
+
                 if (ImGui::BeginTable("TraceTable", 4, flags)) {
                     ImGui::TableSetupColumn("Time");
                     ImGui::TableSetupColumn("ID");
@@ -217,7 +230,7 @@ namespace whale {
                     ImGui::TableSetupColumn("Text");
                     ImGui::TableHeadersRow();
 
-                    for (auto &trace: ecuTrace.traces) {
+                    for (auto& trace : ecuTrace.traces) {
                         ImGui::TableNextRow();
                         ImGui::TableSetColumnIndex(0);
                         ImGui::Text(trace.time.c_str());
@@ -235,6 +248,96 @@ namespace whale {
         ImGui::End();
     }
 
+    void Window::showOdxBrowser(bool* p_open)
+    {
+
+        static std::string selectedLogicalLink;
+        //ImGui::SetNextWindowSize(ImVec2(500, 440), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Odx Browser", nullptr, true))
+        {
+            if (this->m_pdx->isLoaded()) {
+                // Left
+                static int selected = 0;
+                auto vehicleInfos = this->m_pdx->getVehicleInfoShortNames();
+
+                // Using the generic BeginCombo() API, you have full control over how to display the combo contents.
+                // (your selection data could be an index, a pointer to the object, an id for the object, a flag intrusively
+                // stored in the object itself, etc.)
+                static int item_current_idx = 0; // Here we store our selection data as an index.
+                String& combo_preview_value = vehicleInfos[item_current_idx];  // Pass in the preview value visible before opening the combo (it could be anything)
+
+                if (ImGui::BeginCombo("Vehicle Info", combo_preview_value.c_str(), 0))
+                {
+                    for (int n = 0; n < vehicleInfos.size(); n++)
+                    {
+                        const bool is_selected = (item_current_idx == n);
+                        if (ImGui::Selectable(vehicleInfos[n].c_str(), is_selected))
+                            item_current_idx = n;
+
+                        // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
+                        if (is_selected)
+                            ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+                auto logicalLinks = this->m_pdx->getLogicalLinksByVehicleInfoId(combo_preview_value);
+                WH_INFO("Read logical links from {}", combo_preview_value);
+                if (logicalLinks.size() > 0) {
+                    {
+                        ImGui::BeginChild("Logical Links", ImVec2(0, 0), true);
+
+                        for (auto& ll : logicalLinks) {
+                            if (ImGui::Selectable(ll.c_str(), selectedLogicalLink == ll)) {
+                                selectedLogicalLink = ll;
+                            }
+                        }
+                        ImGui::EndChild();
+                    }
+                    ImGui::SameLine();
+                }
+                //ImGui::End();
+            }
+        }
+
+        /*
+        if (ImGui::Begin("Trace Browser"), nullptr, true) {
+
+            // Right
+            if (selectedEcu != "") {
+                auto ecuTrace = this->m_busLog->ecuTrace(selectedEcu);
+                static ImGuiTableFlags flags = ImGuiTableFlags_Resizable |
+                    ImGuiTableFlags_Reorderable |
+                    ImGuiTableFlags_Hideable |
+                    ImGuiTableFlags_RowBg |
+                    ImGuiTableFlags_BordersOuter |
+                    ImGuiTableFlags_BordersH |
+                    ImGuiTableFlags_BordersV;
+
+                if (ImGui::BeginTable("TraceTable", 4, flags)) {
+                    ImGui::TableSetupColumn("Time");
+                    ImGui::TableSetupColumn("ID");
+                    ImGui::TableSetupColumn("Trace");
+                    ImGui::TableSetupColumn("Text");
+                    ImGui::TableHeadersRow();
+
+                    for (auto& trace : ecuTrace.traces) {
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::Text(trace.time.c_str());
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::Text(trace.id.c_str());
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::Text(trace.trace.c_str());
+                        ImGui::TableSetColumnIndex(3);
+                        ImGui::Text(trace.hexTrace.c_str());
+                    }
+                    ImGui::EndTable();
+                }
+            }
+        }
+        */
+        ImGui::End();
+    }
 
     void Window::frameEnd() {
         // EventManager::post<EventFrameEnd>();
@@ -251,7 +354,7 @@ namespace whale {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         // setDarkThemeColors();
 
-        GLFWwindow *backup_current_context = glfwGetCurrentContext();
+        GLFWwindow* backup_current_context = glfwGetCurrentContext();
         ImGui::UpdatePlatformWindows();
         ImGui::RenderPlatformWindowsDefault();
         glfwMakeContextCurrent(backup_current_context);
@@ -260,9 +363,9 @@ namespace whale {
     }
 
     void Window::initGLFW() {
-        glfwSetErrorCallback([](int error, const char *desc) {
+        glfwSetErrorCallback([](int error, const char* desc) {
             WH_ERROR("GLFW Error [{}] : {}", error, desc);
-        });
+            });
 
         if (!glfwInit()) {
             WH_CRITICAL("Failed to initialize GLFW!");
@@ -301,9 +404,9 @@ namespace whale {
 
         // GImGui   = ImGui::CreateContext(fonts);
 
-        GImGui   = ImGui::CreateContext();
+        GImGui = ImGui::CreateContext();
 
-        ImGuiIO &io       = ImGui::GetIO();
+        ImGuiIO& io = ImGui::GetIO();
 
         float fontSize = 16.0f;// *2.0f;
         // io.Fonts->AddFontFromFileTTF("../assets/fonts/Ubuntu-Light.ttf", fontSize);
@@ -314,9 +417,9 @@ namespace whale {
         // ImFont* font = io.Fonts->AddFontFromFileTTF("../assets/fonts/opensans/OpenSans-Regular.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
 
 
-        ImGuiStyle &style = ImGui::GetStyle();
+        ImGuiStyle& style = ImGui::GetStyle();
 
-        style.Alpha          = 1.0F;
+        style.Alpha = 1.0F;
         style.WindowRounding = 0.0F;
 
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -325,7 +428,7 @@ namespace whale {
 
         {
             GLsizei width, height;
-            unsigned char *fontData;
+            unsigned char* fontData;
 
             io.Fonts->GetTexDataAsRGBA32(&fontData, &width, &height);
 
@@ -340,7 +443,7 @@ namespace whale {
         }
 
         // style.WindowMenuButtonPosition = ImGuiDir_None;
-        style.IndentSpacing            = 10.0F;
+        style.IndentSpacing = 10.0F;
 
         ImGui_ImplGlfw_InitForOpenGL(this->m_window, true);
 
@@ -393,7 +496,7 @@ namespace whale {
         colors[ImGuiCol_TitleBgCollapsed] = ImVec4{ 0.15f, 0.1505f, 0.151f, 1.0f };
     }
 
-    void Window::loadLogFile(const std::filesystem::path &logFilePath) {
+    void Window::loadLogFile(const std::filesystem::path& logFilePath) {
         this->m_busLog = new BusLog(logFilePath);
     }
 

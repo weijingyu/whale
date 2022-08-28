@@ -1,8 +1,9 @@
 #pragma once
 
 #include "bus_log.h"
+#include "pdx.h"
+#include "type.h"
 
-#include <filesystem>
 #include <memory>
 #include <string>
 #include <list>
@@ -36,6 +37,7 @@ namespace whale {
         void exitImGui();
 
         void showTraceBrowser(bool* p_open);
+        void showOdxBrowser(bool* p_open);
         void loadLogFile(const std::filesystem::path &logFilePath);
 
 
@@ -60,8 +62,11 @@ namespace whale {
 
         bool m_showDemoWindow;
         bool m_showTraceBrowser;
+        bool m_showOdxBrowser;
 
         BusLog* m_busLog = nullptr;
+        pdx::PDX* m_pdx = nullptr;
+
     };
 
 }

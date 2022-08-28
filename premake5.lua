@@ -15,6 +15,7 @@ group "Dependencies"
     include "whale/external/glfw"
     include "whale/external/imgui"
     include "whale/external/nativefiledialog-extended"
+    include "whale/external/pugixml"
 group ""
 
 -- include "whale"

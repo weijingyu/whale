@@ -7,3 +7,9 @@
 [submodule "whale/external/imgui"]
 	path = whale/external/imgui
 	url = https://github.com/weijingyu/imgui
+[submodule "whale/external/nativefiledialog-extended"]
+	path = whale/external/nativefiledialog-extended
+	url = https://github.com/weijingyu/nativefiledialog-extended
+[submodule "whale/external/pugixml"]
+	path = whale/external/pugixml
+	url = https://github.com/weijingyu/pugixml
