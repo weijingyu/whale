@@ -12,7 +12,7 @@
 #include "type.h"
 
 
-namespace pdx {
+namespace whale {
 
 	// ------------ Type Definitions ------------
 
@@ -649,6 +649,7 @@ namespace pdx {
 
 		const Map<String, DiagComm>& getAllDiagComms() const;
 		Vec<Ref<DiagService>> getAllDiagServices();
+		const Vec<String>& getSubEvShortNames(const String&) const;
 		std::set<Ref<DiagService>> getDiagServicesByValue(unsigned value) const;
 
 		const String& shortName() const {
@@ -663,26 +664,31 @@ namespace pdx {
 		String m_physicalVehicleLink;
 		Reference m_protocolRef;
 		Reference m_functionalGroupRef;
-		Reference m_baseVariantRef;
+		std::optional<Reference> m_baseVariantRef;
 
 		Vec<Reference> m_linkComParamRefs;
 
 		LogicalLink() = default;
 		LogicalLink(const pugi::xml_node&);
 		String shortName() const;
-		String getBaseVariantRef() const {
-			return m_baseVariantRef.docRef;
+		std::optional<String> getBaseVariant() const {
+			if (m_baseVariantRef.has_value()) {
+				return m_baseVariantRef->idRef;
+			}
+			return std::nullopt;
 		}
 	};
 
 	class VehicleInformation : public BasicInfo {
 		Vec<LogicalLink> m_logicalLinks;
+
 	public:
 		VehicleInformation() = default;
 		VehicleInformation(const pugi::xml_node&);
 		std::string shortName() const;
 		Vec<String> getLogicalLinkShortNames();
-		const std::vector<LogicalLink>& getLogicalLinks() {
+		Vec<String> getBvShortNames();
+		const Vec<LogicalLink>& getLogicalLinks() {
 			return m_logicalLinks;
 		}
 	};
@@ -743,6 +749,8 @@ namespace pdx {
 			return m_loaded;
 		}
 
+		Vec<String> getEvShortNamesByBvId(const String& id);
+		Vec<String> getBvShortNamesByVehicleInfoId(const String& id);
 		Vec<String> getLogicalLinksByVehicleInfoId(const String& id);
 		Vec<String> getVehicleInfoShortNames() const;
 		Ref<VehicleInformation> getVehicleInfoById(const String& id);

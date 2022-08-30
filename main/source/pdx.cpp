@@ -26,7 +26,7 @@
 //   6. In the future, to open this project again, go to File > Open > Project and select the .sln file
 
 
-namespace pdx {
+namespace whale {
     inline String getIdFromXml(const pugi::xml_node& xmlNode) {
         return xmlNode.attribute("ID").value();
     }
@@ -236,7 +236,7 @@ namespace pdx {
                 auto doc = m_unitRef->docRef;
                 m_unit = PDX::get().getUnitByDocAndId(doc, id);
                 if (!m_unit) {
-                    throw std::invalid_argument("No unit found!");
+                    WH_ERROR("No unit found!");
                 }
             }
         }
@@ -449,7 +449,7 @@ namespace pdx {
             m_table = PDX::get().getTableByDocAndId(doc, id);
         }
         if (!m_table) {
-            throw std::invalid_argument("No Table found!");
+            WH_ERROR("No Table found!");
         }
     }
 
@@ -467,7 +467,7 @@ namespace pdx {
             }
         }
         if (!m_tableKey || m_tableKey->m_id != idRef) {
-            throw std::invalid_argument("No TableKeyParam found!");
+            WH_ERROR("No TableKeyParam found!");
         }
     }
 
@@ -552,7 +552,7 @@ namespace pdx {
             auto doc = getDocRefFromXml(node.child("BASIC-STRUCTURE-REF"));
             m_basicStructure = PDX::get().getStructureByDocAndId(doc, id);
             if (!m_basicStructure) {
-                throw std::invalid_argument("No structure found!");
+                WH_ERROR("No structure found!");
             }
         }
 
@@ -581,7 +581,7 @@ namespace pdx {
             auto doc = m_basicStructureRef.docRef;
             m_basicStructure = PDX::get().getStructureByDocAndId(doc, id);
             if (!m_basicStructure) {
-                throw std::invalid_argument("No structure found!");
+                WH_ERROR("No structure found!");
             }
         }
 
@@ -608,7 +608,7 @@ namespace pdx {
             m_dataObjectProp = PDX::get().getDataObjectPropByDocAndId(doc, id);
         }
         if (!m_dataObjectProp) {
-            throw std::invalid_argument("No data object prop found!");
+            WH_ERROR("No data object prop found!");
         }
     }
     // ----- End: DynamicLengthField -----
@@ -625,7 +625,7 @@ namespace pdx {
             auto doc = getDocRefFromXml(node.child("BASIC-STRUCTURE-REF"));
             m_basicStruct = PDX::get().getStructureByDocAndId(doc, id);
             if (!m_basicStruct) {
-                throw std::invalid_argument("No structure found!");
+                WH_ERROR("No structure found!");
             }
         }
         m_maxItems = node.child("MAX-NUMBER-OF-ITEMS").text().as_uint();
@@ -675,7 +675,7 @@ namespace pdx {
             const auto& doc = getDocRefFromXml(node.child("STRUCTURE-REF"));
             m_structure = PDX::get().getStructureByDocAndId(doc, id);
             if (!m_structure) {
-                throw std::invalid_argument("No structure found!");
+                WH_ERROR("No structure found!");
             }
         }
         m_key = node.child_value("KEY");
@@ -698,7 +698,7 @@ namespace pdx {
         }
 
         if (!m_keyDop) {
-            throw std::invalid_argument("No Key DOP found!");
+            WH_ERROR("No Key DOP found!");
         }
 
         for (auto& child : node.children()) {
@@ -817,7 +817,7 @@ namespace pdx {
         pugi::xml_parse_result result = doc.load_file(fileName.c_str());
 
         if (!result) {
-            throw std::invalid_argument("Not a valid Diag-Layer-Container Node.");
+            WH_ERROR("Not a valid Diag-Layer-Container Node.");
         }
 
         pugi::xml_node node = doc.find_node([dlcName](pugi::xml_node subnode) {
@@ -1137,7 +1137,7 @@ namespace pdx {
         if (m_diagComms.count(id)) {
             return m_diagComms.at(id);
         }
-        throw std::invalid_argument("DiagComm [" + id + "] not found in dlc [" + m_id + "].");
+        WH_ERROR("DiagComm [" + id + "] not found in dlc [" + m_id + "].");
     }
 
     Ref<PhysicalDimension> DiagLayerContainer::getPhysicalDimensionById(const String& id) const
@@ -1206,6 +1206,11 @@ namespace pdx {
         return allServices;
     }
 
+    const Vec<String>& DiagLayerContainer::getSubEvShortNames(const String&) const
+    {
+        return m_subEcuVariants;
+    }
+
     std::set<std::shared_ptr<DiagService>> DiagLayerContainer::getDiagServicesByValue(unsigned value) const {
         std::set<std::shared_ptr<DiagService>> allDiagComms;
         /*for (auto& [key, diagComm] : m_diagServices) {
@@ -1240,6 +1245,18 @@ namespace pdx {
         Vec<String> shortNames;
         for (auto& logicalLink : m_logicalLinks) {
             shortNames.push_back(logicalLink.shortName());
+        }
+        return shortNames;
+    }
+
+    Vec<String> VehicleInformation::getBvShortNames()
+    {
+        Vec<String> shortNames;
+        for (auto& logicalLink : m_logicalLinks) {
+            auto shortName = logicalLink.getBaseVariant();
+            if (shortName.has_value()) {
+                shortNames.push_back(*shortName);
+            }
         }
         return shortNames;
     }
@@ -1324,9 +1341,9 @@ namespace pdx {
         }
 
 
-        /*for (auto& [id, fileName] : m_dlcFiles) {
+        for (auto& [id, fileName] : m_dlcFiles) {
         	m_dlcMap[id] = CreateRef<DiagLayerContainer>(DiagLayerContainer(id));
-        }*/
+        }
 
         pugi::xml_document visDoc;
         pugi::xml_parse_result visResult = visDoc.load_file(m_visFile.c_str());
@@ -1416,12 +1433,12 @@ namespace pdx {
                 return this->addDlcById(id);
             }
             else {
-                throw std::invalid_argument("Diag Layer Container not found!");
+                WH_ERROR("Diag Layer Container not found!");
             }
         }
     }
 
-    Ref<ComParamSpec> PDX::getComParamSpecById(const std::string& id)
+    Ref<ComParamSpec> PDX::getComParamSpecById(const String& id)
     {
         if (m_comparamSpecs.count(id)) {
             return m_comparamSpecs.at(id);
@@ -1429,7 +1446,7 @@ namespace pdx {
         return nullptr;
     }
 
-    String PDX::getDlcFileNameById(const std::string& id)
+    String PDX::getDlcFileNameById(const String& id)
     {
         String requestedFile = "";
         if (m_dlcFiles.count(id)) {
@@ -1518,7 +1535,7 @@ namespace pdx {
         pugi::xml_parse_result result = doc.load_file(fileName.c_str());
 
         if (!result) {
-            throw std::invalid_argument("Failed to open file : " + fileName);
+            WH_ERROR("Failed to open file : " + fileName);
         }
 
         pugi::xml_node node = doc.child("ODX").first_child();
@@ -1571,6 +1588,14 @@ namespace pdx {
 
     Vec<String> PDX::getLogicalLinksByVehicleInfoId(const String& id) {
         return m_vehicleInfoMap[id]->getLogicalLinkShortNames();
+    }
+
+    Vec<String> PDX::getBvShortNamesByVehicleInfoId(const String& id) {
+        return m_vehicleInfoMap[id]->getBvShortNames();
+    }
+
+    Vec<String> PDX::getEvShortNamesByBvId(const String& id) {
+        return m_dlcMap[id]->getSubEvShortNames(id);
     }
 
 }

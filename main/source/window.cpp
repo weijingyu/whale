@@ -29,7 +29,7 @@ namespace whale {
         this->initGLFW();
         this->initImGui();
 
-        m_pdx = &pdx::PDX::get();
+        m_pdx = &PDX::get();
     }
 
     Window::~Window() {
@@ -251,28 +251,30 @@ namespace whale {
     void Window::showOdxBrowser(bool* p_open)
     {
 
-        static std::string selectedLogicalLink;
-        //ImGui::SetNextWindowSize(ImVec2(500, 440), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Odx Browser", nullptr, true))
+        if (this->m_pdx->isLoaded() && ImGui::Begin("Odx Browser", nullptr, true))
         {
-            if (this->m_pdx->isLoaded()) {
-                // Left
+            ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
+
+            static std::string selectedBv;
+
+            // Child 1: no border, enable horizontal scrollbar
+            {
+                ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+                ImGui::BeginChild("ChildL", ImVec2(200, ImGui::GetContentRegionAvail().y), false, window_flags);
+                
+                // Vehicle Info
                 static int selected = 0;
                 auto vehicleInfos = this->m_pdx->getVehicleInfoShortNames();
-
-                // Using the generic BeginCombo() API, you have full control over how to display the combo contents.
-                // (your selection data could be an index, a pointer to the object, an id for the object, a flag intrusively
-                // stored in the object itself, etc.)
-                static int item_current_idx = 0; // Here we store our selection data as an index.
-                String& combo_preview_value = vehicleInfos[item_current_idx];  // Pass in the preview value visible before opening the combo (it could be anything)
+                static int vi_current_idx = 0; // Here we store our selection data as an index.
+                String& combo_preview_value = vehicleInfos[vi_current_idx];  // Pass in the preview value visible before opening the combo (it could be anything)
 
                 if (ImGui::BeginCombo("Vehicle Info", combo_preview_value.c_str(), 0))
                 {
                     for (int n = 0; n < vehicleInfos.size(); n++)
                     {
-                        const bool is_selected = (item_current_idx == n);
+                        const bool is_selected = (vi_current_idx == n);
                         if (ImGui::Selectable(vehicleInfos[n].c_str(), is_selected))
-                            item_current_idx = n;
+                            vi_current_idx = n;
 
                         // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
                         if (is_selected)
@@ -280,15 +282,15 @@ namespace whale {
                     }
                     ImGui::EndCombo();
                 }
-                auto logicalLinks = this->m_pdx->getLogicalLinksByVehicleInfoId(combo_preview_value);
-                WH_INFO("Read logical links from {}", combo_preview_value);
-                if (logicalLinks.size() > 0) {
+                auto bvs = this->m_pdx->getBvShortNamesByVehicleInfoId(combo_preview_value);
+                WH_INFO("Read base variant from {}", combo_preview_value);
+                if (bvs.size() > 0) {
                     {
                         ImGui::BeginChild("Logical Links", ImVec2(0, 0), true);
 
-                        for (auto& ll : logicalLinks) {
-                            if (ImGui::Selectable(ll.c_str(), selectedLogicalLink == ll)) {
-                                selectedLogicalLink = ll;
+                        for (auto& bv : bvs) {
+                            if (ImGui::Selectable(bv.c_str(), selectedBv == bv)) {
+                                selectedBv = bv;
                             }
                         }
                         ImGui::EndChild();
@@ -296,47 +298,48 @@ namespace whale {
                     ImGui::SameLine();
                 }
                 //ImGui::End();
+                ImGui::EndChild();
             }
-        }
 
-        /*
-        if (ImGui::Begin("Trace Browser"), nullptr, true) {
+            ImGui::SameLine();
 
-            // Right
-            if (selectedEcu != "") {
-                auto ecuTrace = this->m_busLog->ecuTrace(selectedEcu);
-                static ImGuiTableFlags flags = ImGuiTableFlags_Resizable |
-                    ImGuiTableFlags_Reorderable |
-                    ImGuiTableFlags_Hideable |
-                    ImGuiTableFlags_RowBg |
-                    ImGuiTableFlags_BordersOuter |
-                    ImGuiTableFlags_BordersH |
-                    ImGuiTableFlags_BordersV;
+            static String prevBv;
+            static int ev_current_idx = 0; // Here we store our selection data as an index.
+            static Vec<String> subEvs;
+            // Child 2: rounded border
+            if (!selectedBv.empty()) {
+                ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+                ImGui::BeginChild("ChildR", ImVec2(0, ImGui::GetContentRegionAvail().y), true, window_flags);
 
-                if (ImGui::BeginTable("TraceTable", 4, flags)) {
-                    ImGui::TableSetupColumn("Time");
-                    ImGui::TableSetupColumn("ID");
-                    ImGui::TableSetupColumn("Trace");
-                    ImGui::TableSetupColumn("Text");
-                    ImGui::TableHeadersRow();
-
-                    for (auto& trace : ecuTrace.traces) {
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::Text(trace.time.c_str());
-                        ImGui::TableSetColumnIndex(1);
-                        ImGui::Text(trace.id.c_str());
-                        ImGui::TableSetColumnIndex(2);
-                        ImGui::Text(trace.trace.c_str());
-                        ImGui::TableSetColumnIndex(3);
-                        ImGui::Text(trace.hexTrace.c_str());
-                    }
-                    ImGui::EndTable();
+                // Ecu Variant
+                static int selectedEv = 0;
+                if (prevBv != selectedBv) {
+                    WH_INFO("Another BV {} selected, update EVs:", selectedBv);
+                    subEvs.clear();
+                    subEvs = this->m_pdx->getEvShortNamesByBvId(selectedBv);
+                    ev_current_idx = 0;
                 }
+                String& ev_preview_value = subEvs[ev_current_idx];  // Pass in the preview value visible before opening the combo (it could be anything)
+
+                if (ImGui::BeginCombo("Vehicle Info", ev_preview_value.c_str(), 0))
+                {
+                    for (int n = 0; n < subEvs.size(); n++)
+                    {
+                        const bool is_selected = (ev_current_idx == n);
+                        if (ImGui::Selectable(subEvs[n].c_str(), is_selected))
+                            ev_current_idx = n;
+
+                        // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
+                        if (is_selected)
+                            ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+                ImGui::EndChild();
             }
+            ImGui::PopStyleVar();
+            ImGui::End();
         }
-        */
-        ImGui::End();
     }
 
     void Window::frameEnd() {
