@@ -1,6 +1,4 @@
 #pragma once
-#ifndef PDX_H
-#define PDX_H
 
 #include <fstream>
 #include <pugixml.hpp>
@@ -15,9 +13,6 @@
 namespace whale {
 
 	// ------------ Type Definitions ------------
-
-
-	using empty_t = void*;
 	using DopSNRef = std::string;
 
 	enum class DiagCommType {
@@ -50,7 +45,7 @@ namespace whale {
 		String docRef;
 		String docType;
 
-		Reference() {};
+		Reference() = default;
 		Reference(const pugi::xml_node&);
 		//Reference(const Reference& rhs);
 		Reference(const String& id, const String& doc = "", const String& type = "");
@@ -75,8 +70,8 @@ namespace whale {
 
 	struct Unit : public BasicInfo {
 		String m_displayName;
-		unsigned m_factorSiToUnit;
-		unsigned m_offsetSiToUnit;
+		unsigned m_factorSiToUnit = 0;
+		unsigned m_offsetSiToUnit = 0;
 		Ref<PhysicalDimension> m_physicalDimension;
 
 		Unit() = default;
@@ -298,9 +293,8 @@ namespace whale {
 		String m_type;
 		std::optional<String> m_semantic;
 		std::optional<unsigned> m_bytePosition;
-		unsigned m_bitPosition;
+		unsigned m_bitPosition = 0;
 
-		Param() = default;
 		Param(const pugi::xml_node&);
 	};
 
@@ -787,5 +781,3 @@ namespace whale {
 		inline static bool m_loaded;
 	};
 }
-
-#endif // PDX_H

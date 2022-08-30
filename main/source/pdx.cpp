@@ -146,21 +146,6 @@ namespace whale {
     // ----- Start: DiagCodedType -----
     DiagCodedType::DiagCodedType(const pugi::xml_node& node)
     {
-        /*
-        * String m_xsiType;
-        String m_baseDataType;
-
-        String m_baseTypeEncoding;
-        unsigned m_bitLength = 0;
-        String m_bitMask;	// store a hex value in string
-        bool m_isHighLowByteOrder = false;
-
-        String m_termination;
-        unsigned m_maxLength = 0;
-        unsigned m_minLength = 0;
-
-        Reference m_lengthKeyRef;
-        */
         m_xsiType = node.attribute("xsi:type").value();
         m_baseDataType = node.attribute("BASE-DATA-TYPE").value();
 
@@ -178,8 +163,7 @@ namespace whale {
                 m_isHighLowByteOrder = temp.as_bool();
             }
         }
-
-        if (m_xsiType == "MIN-MAX-LENGTH-TYPE") {
+         else if (m_xsiType == "MIN-MAX-LENGTH-TYPE") {
             if (const auto& temp = node.attribute("TERMINATION")) {
                 m_termination = temp.value();
             }
@@ -190,14 +174,12 @@ namespace whale {
                 m_minLength = temp.text().as_uint();
             }
         }
-
-        if (m_xsiType == "LEADING-LENGTH-INFO-TYPE") {
+        else if (m_xsiType == "LEADING-LENGTH-INFO-TYPE") {
             if (const auto& temp = node.child("BIT-LENGTH")) {
                 m_bitLength = temp.text().as_uint();
             }
         }
-
-        if (m_xsiType == "PARAM-LENGTH-INFO-TYPE") {
+        else if (m_xsiType == "PARAM-LENGTH-INFO-TYPE") {
             if (const auto& temp = node.child("BIT-LENGTH")) {
                 m_lengthKeyRef = Reference(temp);
             }
@@ -349,16 +331,15 @@ namespace whale {
     {
         m_isVisible = node.attribute("IS-VISIBLE").as_bool();
         // dtcs
-        for (auto& dtc : node.child("DTCS").children()) {
-            if (!strcmp(dtc.name(), "DTC")) {
-                auto id = getIdFromXml(dtc);
-                m_dtcs[id] = CreateRef<DTC>(dtc);
-            }
-            else if (!strcmp(dtc.name(), "DTC-REF")) {
-                auto id = getIdRefFromXml(dtc);
-                auto doc = getDocRefFromXml(dtc);
-                m_dtcs[id] = PDX::get().getDtcByDocAndId(doc, id);
-            }
+        for (auto& dtc : node.child("DTCS").children("DTC")) {
+            auto id = getIdFromXml(dtc);
+            m_dtcs[id] = CreateRef<DTC>(dtc);
+        }
+
+        for (auto& dtc : node.child("DTCS").children("DTC-REF")) {
+            auto id = getIdRefFromXml(dtc);
+            auto doc = getDocRefFromXml(dtc);
+            m_dtcs[id] = PDX::get().getDtcByDocAndId(doc, id);
         }
     }
     // ----- End: DtcDop -----
@@ -454,6 +435,7 @@ namespace whale {
     }
 
     TableStructParam::TableStructParam(const pugi::xml_node& node)
+        : Param(node)
     {
         m_tableKeyRef = Reference(node.child("TABLE-KEY-REF"));
     }
@@ -1423,7 +1405,7 @@ namespace whale {
         }
     }
 
-    Ref<DiagLayerContainer> PDX::getDlcById(const std::string& id)
+    Ref<DiagLayerContainer> PDX::getDlcById(const String& id)
     {
         if (this->m_dlcMap.count(id)) {
             return this->m_dlcMap.at(id);
@@ -1436,6 +1418,7 @@ namespace whale {
                 WH_ERROR("Diag Layer Container not found!");
             }
         }
+        return nullptr;
     }
 
     Ref<ComParamSpec> PDX::getComParamSpecById(const String& id)
