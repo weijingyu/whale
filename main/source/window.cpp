@@ -138,9 +138,9 @@ namespace whale {
                     }
 
                     if (ImGui::BeginMenu("View")) {
-                        if (ImGui::MenuItem("Show Demo Window", nullptr, &this->m_showDemoWindow));
-                        if (ImGui::MenuItem("Trace Browser", nullptr, &this->m_showTraceBrowser));
-                        if (ImGui::MenuItem("Odx Browser", nullptr, &this->m_showOdxBrowser));
+                        if (ImGui::MenuItem("Show Demo Window", nullptr, &this->m_showDemoWindow)) {}
+                        if (ImGui::MenuItem("Trace Browser", nullptr, &this->m_showTraceBrowser)) {}
+                        if (ImGui::MenuItem("Odx Browser", nullptr, &this->m_showOdxBrowser)) {}
                         ImGui::EndMenu();
                     }
 
@@ -315,7 +315,7 @@ namespace whale {
                 static int selectedEv = 0;
                 if (prevBv != selectedBv) {
                     WH_INFO("Another BV {} selected, update EVs:", selectedBv);
-                    subEvs.clear();
+                    // subEvs.clear();
                     subEvs = this->m_pdx->getEvShortNamesByBvId(selectedBv);
                     ev_current_idx = 0;
                 }

@@ -79,10 +79,10 @@ namespace whale {
     {
     }
 
-    Reference::Reference(const String& id, const String& doc, const String& type)
-        : idRef(id),
-        docRef(doc),
-        docType(type)
+    Reference::Reference(String id, String doc, String type)
+        : idRef(std::move(id)),
+        docRef(std::move(doc)),
+        docType(std::move(type))
     {
     }
     // ----- End: Class Reference -----
@@ -624,7 +624,7 @@ namespace whale {
         m_dopRef = Reference(node.child("DATA-OBJECT-PROP-REF"));
     }
 
-    Mux::Case::Case(const pugi::xml_node& node) {
+    Mux::MuxCase::MuxCase(const pugi::xml_node& node) {
         m_shortName = node.child_value("SHORT-NAME");
         m_longName = node.child_value("LONG-NAME");
         m_strutureRef = Reference(node.child("STRUCTURE-REF"));
@@ -637,10 +637,10 @@ namespace whale {
         m_isVisible = node.attribute("IS-VISIBLE").as_bool();
         m_bytePosition = node.child("BYTE-POSITION").text().as_uint();
         m_switchKey = SwitchKey(node.child("SWITCH-KEY"));
-        m_defaultCase = Case(node.child("DEFAULT-CASE"));
+        m_defaultCase = MuxCase(node.child("DEFAULT-CASE"));
 
         for (pugi::xml_node _case : node.child("CASES").children()) {
-            m_cases.push_back(Case(_case));
+            m_cases.push_back(MuxCase(_case));
         }
     }
     // ----- End: Mux -----
@@ -711,9 +711,9 @@ namespace whale {
 
         m_addressing = node.attribute("ADDRESSING").value();
         m_semantic = node.attribute("SEMANTIC").value();
-        for (const auto& fc : node.child("FUNCT-CLASS-REFS").children("FUNCT-CLASS-REF")) {
+        /*for (const auto& fc : node.child("FUNCT-CLASS-REFS").children("FUNCT-CLASS-REF")) {
             m_functClassRefs.emplace_back(Reference(fc));
-        }
+        }*/
         m_requestRef = Reference(node.child("REQUEST-REF"));
         m_posResponseRef = Reference(node.child("REQUEST-REF"));
         m_negResponseRef = Reference(node.child("REQUEST-REF"));
@@ -730,7 +730,7 @@ namespace whale {
     {
 
         // funct class refs
-        for (auto& fc : node.child("FUNCT-CLASS-REFS").children("FUNCT-CLASS-REF")) {
+        /*for (auto& fc : node.child("FUNCT-CLASS-REFS").children("FUNCT-CLASS-REF")) {
             m_functClassRefs.emplace_back(Reference(fc));
         }
 
@@ -739,7 +739,7 @@ namespace whale {
             node.attribute("IS-DEVELOPMENT").as_bool(),
             node.attribute("IS-MANUFACTURING").as_bool(),
             node.attribute("IS-AFTERSALES").as_bool()
-        };
+        };*/
 
         // prog codes
         for (auto& pc : node.child("PROG-CODES").children("PROG-CODE")) {
@@ -781,7 +781,7 @@ namespace whale {
     // ----- End: SinglEcuVariantPatterneEcuJob -----
 
     // ----- Start: Class ParentRef -----
-    DiagLayerContainer::ParentRef::ParentRef(const pugi::xml_node& node, const Ref<DiagLayerContainer>& dlc)
+    ParentRef::ParentRef(const pugi::xml_node& node, const Ref<DiagLayerContainer>& dlc)
         : Reference(node), xsiType(getXsiTypeFromXml(node)), parentDlc(dlc)
     {
         for (auto& diagComm : node.child("NOT-INHERITED-DIAG-COMMS").children()) {
@@ -831,7 +831,7 @@ namespace whale {
             }
             m_parentRefs[parentId] = ParentRef(ref, parentDlc);
 
-            bool alreadyParented = false;
+            /*bool alreadyParented = false;
             for (auto& [id, grandParent] : parentDlc->m_parentRefs) {
                 if (m_parentRefs.count(id)) {
                     m_parentRefs.at(id).notInheritedDiagComms.merge(grandParent.notInheritedDiagComms);
@@ -839,7 +839,7 @@ namespace whale {
                 else {
                     m_parentRefs[id] = grandParent;
                 }
-            }
+            }*/
         }
 
         // Diag Data Dictionary Spec
@@ -910,10 +910,10 @@ namespace whale {
 
 
         // Funct Class
-        for (auto& fc : node.child("FUNCT-CLASSS").children()) {
+        /*for (auto& fc : node.child("FUNCT-CLASSS").children()) {
             String id = getIdFromXml(fc);
             this->m_funcClasses[id] = CreateRef<FunctClass>(FunctClass(fc));
-        }
+        }*/
 
         // ----- DiagComms -----
         for (auto& diagComm : node.child("DIAG-COMMS").children()) {
@@ -975,9 +975,9 @@ namespace whale {
         }
 
         // Ecu Variant Patterns
-        for (auto& pattern : node.child("ECU-VARIANT-PATTERNS").children("ECU-VARIANT-PATTERN")) {
+        /*for (auto& pattern : node.child("ECU-VARIANT-PATTERNS").children("ECU-VARIANT-PATTERN")) {
             m_ecuVariantPatterns.emplace_back(EcuVariantPattern(pattern));
-        }
+        }*/
 
         /*std::cout << "Processing inheritance for: [" << m_id << "]\nsize: " << m_diagComms.size();
         for (auto parentRef : m_parentRefs) {
@@ -1027,9 +1027,9 @@ namespace whale {
 
     Ref<FunctClass> DiagLayerContainer::getFunctClassById(const String& id) const
     {
-        if (m_funcClasses.count(id)) {
+        /*if (m_funcClasses.count(id)) {
             return m_funcClasses.at(id);
-        }
+        }*/
         return nullptr;
     }
 
@@ -1190,6 +1190,10 @@ namespace whale {
 
     const Vec<String>& DiagLayerContainer::getSubEvShortNames(const String&) const
     {
+        WH_INFO("In ev: {}", m_id);
+        for (auto subev : m_subEcuVariants) {
+            WH_INFO("\tcurrent sub ev: {}", subev);
+        }
         return m_subEcuVariants;
     }
 
@@ -1364,14 +1368,14 @@ namespace whale {
         m_loaded = true;
     }
 
-    Ref<DiagLayerContainer> PDX::getEvByShortName(const std::string& evName)
+    Ref<DiagLayerContainer> PDX::getEvByShortName(const String& evName)
     {
         auto evDlc = getDlcById(evName);
         evDlc->inherit();
         return evDlc;
     }
 
-    void PDX::initDLCByShortName(const std::string& dlcName)
+    void PDX::initDLCByShortName(const String& dlcName)
     {
         if (!m_dlcMap.count(dlcName)) {
 
@@ -1446,7 +1450,7 @@ namespace whale {
         return m_dlcMap[id];
     }
 
-    Ref<DopBase> PDX::getDopByDocAndId(const std::string& doc, const std::string& id) {
+    Ref<DopBase> PDX::getDopByDocAndId(const String& doc, const String& id) {
         return m_dlcMap[doc]->getDopById(id);
     }
 
@@ -1578,6 +1582,7 @@ namespace whale {
     }
 
     Vec<String> PDX::getEvShortNamesByBvId(const String& id) {
+        WH_INFO("request bv: {}", id);
         return m_dlcMap[id]->getSubEvShortNames(id);
     }
 

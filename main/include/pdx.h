@@ -48,7 +48,7 @@ namespace whale {
 		Reference() = default;
 		Reference(const pugi::xml_node&);
 		//Reference(const Reference& rhs);
-		Reference(const String& id, const String& doc = "", const String& type = "");
+		Reference(String id, String doc = "", String type = "");
 	};
 
 	
@@ -466,22 +466,22 @@ namespace whale {
 			SwitchKey(const pugi::xml_node&);
 		};
 
-		struct Case {
+		struct MuxCase {
 			String m_shortName;
 			String m_longName;
 			Reference m_strutureRef;
 			unsigned m_lowerLimit = 0;
 			unsigned m_upperLimit = 0;
 
-			Case() {};
-			Case(const pugi::xml_node&);
+			MuxCase() {};
+			MuxCase(const pugi::xml_node&);
 		};
 
 		bool m_isVisible;
 		unsigned m_bytePosition;
 		SwitchKey m_switchKey;
-		Case m_defaultCase;
-		Vec<Case> m_cases;
+		MuxCase m_defaultCase;
+		Vec<MuxCase> m_cases;
 
 		Mux() = default;
 		Mux(const pugi::xml_node&);
@@ -504,7 +504,7 @@ namespace whale {
 	struct DiagService : public BasicInfo {
 		String m_addressing;
 		String m_semantic;
-		Vec<Reference> m_functClassRefs;
+		// Vec<Reference> m_functClassRefs;
 		Reference m_requestRef;
 		Reference m_posResponseRef;
 		Reference m_negResponseRef;
@@ -533,8 +533,8 @@ namespace whale {
 			Reference m_dopBaseRef;
 		};
 
-		Vec<Reference> m_functClassRefs;
-		Audience m_audience;
+		// Vec<Reference> m_functClassRefs;
+		// Audience m_audience;
 		Vec<ProgCode> m_progCodes;
 		Vec<InputParam> m_inputParams;
 
@@ -565,23 +565,25 @@ namespace whale {
 		Ref<SingleEcuJob> singleEcuJob;
 	};
 
+	// ---------------------------
+	struct ParentRef : public Reference {
+		String xsiType;
+		int parentRefType;
+		Set<String> notInheritedDiagComms;
+		Ref<DiagLayerContainer> parentDlc;
+		//unsigned m_parentRefType;
+
+		ParentRef() = default;
+		ParentRef(const pugi::xml_node& node, const Ref<DiagLayerContainer>& parentDlc);
+
+		bool operator<(const ParentRef& other) const {
+			return parentRefType < other.parentRefType;
+		}
+	};
+	// ---------------------------
+
 	struct DiagLayerContainer : public BasicInfo {
-		// ---------------------------
-		struct ParentRef : public Reference {
-			String xsiType;
-			int parentRefType;
-			Set<String> notInheritedDiagComms;
-			Ref<DiagLayerContainer> parentDlc;
-			//unsigned m_parentRefType;
-
-			ParentRef() = default;
-			ParentRef(const pugi::xml_node& node, const Ref<DiagLayerContainer>& parentDlc);
-
-			bool operator<(const ParentRef& other) const {
-				return parentRefType < other.parentRefType;
-			}
-		};
-		// ---------------------------
+		
 
 
 		String m_containerType;
@@ -598,7 +600,7 @@ namespace whale {
 		Map<String, Ref<Mux>>					m_muxes;
 		Map<String, Ref<Table>>					m_tables;
 
-		Map<String, Ref<FunctClass>>			m_funcClasses;
+		// Map<String, Ref<FunctClass>>			m_funcClasses;
 		// A DiagComm could be:
 		Map<String, DiagComm>					m_diagComms;
 		Map<String, Ref<DiagService>>			m_diagServices;
@@ -613,7 +615,7 @@ namespace whale {
 		Map<String, ParentRef>					m_parentRefs;
 		Reference								m_comParamSpecRef;
 
-		Vec<EcuVariantPattern>					m_ecuVariantPatterns;
+		// Vec<EcuVariantPattern>					m_ecuVariantPatterns;
 
 		bool m_parentLoaded = false;
 		void inherit();
@@ -637,8 +639,8 @@ namespace whale {
 		Ref<Table>				getTableById(const String& id) const;
 		Ref<Unit>				getUnitById(const String& id) const;
 		Ref<DTC>				getDtcById(const String& id) const;
-		Ref<PhysicalDimension>	getPhysicalDimensionById(const std::string& id) const;
-		Ref<DataObjectProp>		getDopByShortName(const std::string& shortName) const;
+		Ref<PhysicalDimension>	getPhysicalDimensionById(const String& id) const;
+		Ref<DataObjectProp>		getDopByShortName(const String& shortName) const;
 		DiagComm				getDiagCommById(const String& id) const;
 
 		const Map<String, DiagComm>& getAllDiagComms() const;
@@ -753,7 +755,7 @@ namespace whale {
 		Ref<DiagLayerContainer> getDlcById(const String& id);
 		Ref<ComParamSpec> getComParamSpecById(const String& id);
 		Ref<DiagLayerContainer> addDlcById(const String& id);
-		Ref<DopBase> getDopByDocAndId(const std::string& doc, const String& id);
+		Ref<DopBase> getDopByDocAndId(const String& doc, const String& id);
 		Ref<DataObjectProp> getDataObjectPropByDocAndId(const String& doc, const String& id);
 		Ref<Structure> getStructureByDocAndId(const String& doc, const String& id);
 		Ref<Unit> getUnitByDocAndId(const String& doc, const String& id);
@@ -764,7 +766,7 @@ namespace whale {
 
 	private:
 		PDX() {}
-		void initDLCByShortName(const std::string&);
+		void initDLCByShortName(const String&);
 
 		String m_modelYear;
 		String m_oem;
