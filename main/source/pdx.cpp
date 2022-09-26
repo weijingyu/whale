@@ -146,42 +146,47 @@ namespace whale {
     // ----- Start: DiagCodedType -----
     DiagCodedType::DiagCodedType(const pugi::xml_node& node)
     {
-        m_xsiType = node.attribute("xsi:type").value();
+        String xsiType = node.attribute("xsi:type").value();
+        if (xsiType == "STANDARD-LENGTH-TYPE") {
+            m_xsiType = DiagCodedType_E::StandardLength;
+        }
+        else if (xsiType == "MIN-MAX-LENGTH-TYPE") {
+            m_xsiType = DiagCodedType_E::StandardLength;
+        }
+        else if (xsiType == "LEADING-LENGTH-INFO-TYPE") {
+            m_xsiType = DiagCodedType_E::StandardLength;
+        }
+        else if (xsiType == "PARAM-LENGTH-INFO-TYPE") {
+            m_xsiType = DiagCodedType_E::StandardLength;
+        }   
+
         m_baseDataType = node.attribute("BASE-DATA-TYPE").value();
 
-        if (m_xsiType == "STANDARD-LENGTH-TYPE") {
-            if (const auto& temp = node.attribute("BASE-TYPE-ENCODING")) {
-                m_baseTypeEncoding = temp.value();
-            }
-            if (const auto& temp = node.child("BIT-LENGTH")) {
-                m_bitLength = temp.text().as_uint();
-            }
-            if (const auto& temp = node.child("BIT-MASK")) {
-                m_bitMask = temp.value();
-            }
-            if (const auto& temp = node.attribute("IS-HIGHLOW-BYTE-ORDER")) {
-                m_isHighLowByteOrder = temp.as_bool();
-            }
+        if (const auto& temp = node.attribute("BASE-TYPE-ENCODING")) {
+            m_baseTypeEncoding = temp.value();
         }
-         else if (m_xsiType == "MIN-MAX-LENGTH-TYPE") {
-            if (const auto& temp = node.attribute("TERMINATION")) {
-                m_termination = temp.value();
-            }
-            if (const auto& temp = node.child("MAX-LENGTH")) {
-                m_maxLength = temp.text().as_uint();
-            }
-            if (const auto& temp = node.child("MIN-LENGTH")) {
-                m_minLength = temp.text().as_uint();
-            }
+        if (const auto& temp = node.attribute("IS-HIGHLOW-BYTE-ORDER")) {
+            m_isHighLowByteOrder = temp.as_bool();
         }
-        else if (m_xsiType == "LEADING-LENGTH-INFO-TYPE") {
-            if (const auto& temp = node.child("BIT-LENGTH")) {
-                m_bitLength = temp.text().as_uint();
-            }
+        if (const auto& temp = node.attribute("TERMINATION")) {
+            m_isHighLowByteOrder = temp.value();
         }
-        else if (m_xsiType == "PARAM-LENGTH-INFO-TYPE") {
-            if (const auto& temp = node.child("BIT-LENGTH")) {
-                m_lengthKeyRef = Reference(temp);
+
+        for (auto& child : node.children()) {
+            if (!strcmp(child.name(),"BIT-LENGTH")) {
+                m_bitLength = child.text().as_uint();
+            }
+            if (!strcmp(child.name(), "BIT-MASK")) {
+                m_bitMask = child.value();
+            }
+            if (!strcmp(child.name(), "MAX-LENGTH")) {
+                m_maxLength = child.text().as_uint();
+            }
+            if (!strcmp(child.name(), "MIN-LENGTH")) {
+                m_minLength = child.text().as_uint();
+            }
+            if (!strcmp(child.name(), "LENGTH-KEY-REF")) {
+                m_lengthKeyRef = getIdRefFromXml(child);
             }
         }
     }
