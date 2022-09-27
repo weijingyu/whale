@@ -32,7 +32,7 @@ namespace whale {
         String m_id;
         String m_shortName;
         String m_longName;
-        String m_description;
+        //String m_description;
 
         BasicInfo() {}
         BasicInfo(const pugi::xml_node& node);
@@ -591,6 +591,9 @@ namespace whale {
         }
     };
 
+    struct BasicVariant : BasicInfo {
+    };
+
     struct LogicalLink : BasicInfo {
         String m_physicalVehicleLink;
         Reference m_protocolRef;
@@ -708,6 +711,8 @@ namespace whale {
         String m_visFile;
 
         Vec<String> cps;
+        Vec<String> m_bvs;
+        Map<String, Vec<String>> m_bvMapSubEvs;
         Map<String, Ref<DiagLayerContainer>> m_dlcMap;
         Map<String, Ref<ComParamSpec>> m_comparamSpecs;
         Map<String, Ref<VehicleInformation>> m_vehicleInfoMap;

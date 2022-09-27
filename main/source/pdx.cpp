@@ -101,7 +101,7 @@ namespace whale {
         m_id = node.attribute("ID").value();
         m_shortName = node.child_value("SHORT-NAME");
         m_longName = node.child_value("LONG-NAME");
-        m_description = getDescriptionFromXml(node);
+        //m_description = getDescriptionFromXml(node);
     }
     String BasicInfo::id() const
     {
@@ -799,6 +799,7 @@ namespace whale {
     // ---- Start: DiagLayerContainer -----
     DiagLayerContainer::DiagLayerContainer(const String& dlcName)
     {
+        WH_INFO("Initializing DLC [{}]", dlcName);
         pugi::xml_document doc;
         auto fileName = PDX::get().getDlcFileNameById(dlcName);
         pugi::xml_parse_result result = doc.load_file(fileName.c_str());
@@ -816,7 +817,7 @@ namespace whale {
         m_id = node.attribute("ID").value();
         m_shortName = node.child_value("SHORT-NAME");
         m_longName = node.child_value("LONG-NAME");
-        m_description = getDescriptionFromXml(node);
+        //m_description = getDescriptionFromXml(node);
 
         // Import Refs
         for (const auto& ref : node.child("IMPORT-REFS").children()) {
@@ -1307,34 +1308,61 @@ namespace whale {
         pugi::xml_document doc; // vehicle info spec
         pugi::xml_parse_result result = doc.load_file("index.xml");
 
+        Vec<String> evs;
+        Vec<String> bvs;
+
 
         for (auto& ablock : doc.child("CATALOG").child("ABLOCKS").children()) {
-            String shortName = ablock.child_value("SHORT-NAME");
-            auto odxPos = shortName.find("odx");
+            String fileName = ablock.child_value("SHORT-NAME");
+            auto odxPos = fileName.find("odx");
             if (odxPos != std::string::npos) {
-                shortName.replace(odxPos - 1, 1, ".");
-                std::string fileType = shortName.substr(0, 2);
+                fileName.replace(odxPos - 1, 1, ".");
+                std::string fileType = fileName.substr(0, 2);
                 if (fileType == "VI") {
-                    m_visFile = shortName;
+                    m_visFile = fileName;
                 }
-                if (fileType == "PR" || fileType == "FG" || fileType == "BV" || fileType == "ES" || fileType == "BL") {
-                    auto pos = shortName.find_first_of('_', 5);
-                    m_dlcFiles[shortName.substr(0, pos)] = shortName;
+                else if (fileType == "PR" || fileType == "FG" || fileType == "ES" || fileType == "BL") {
+                    auto pos = fileName.find_first_of('_', 5);
+                    m_dlcFiles[fileName.substr(0, pos)] = fileName;
                 }
-                if (fileType == "EV") {
-                    auto pos = shortName.find("_d.odx");
-                    m_dlcFiles[shortName.substr(0, pos - 3)] = shortName;
+                else if (fileType == "BV") {
+                    auto pos = fileName.find_first_of('_', 5);
+                    auto shortName = fileName.substr(0, pos);
+                    m_dlcFiles[shortName] = fileName;
+                    m_bvs.push_back(shortName);
                 }
-                if (fileType == "IS") {
-                    cps.push_back(shortName);
+                else if (fileType == "EV") {
+                    auto pos = fileName.find("_d.odx");
+                    auto shortName = fileName.substr(0, pos - 3);
+                    m_dlcFiles[shortName] = fileName;
+                    evs.push_back(shortName);
+                }
+                else if (fileType == "IS") {
+                    cps.push_back(fileName);
+                }
+            }
+        }
+
+        for (auto& ev : evs) {
+            if (doc.load_file(m_dlcFiles[ev].c_str())) {
+                auto parent_bv = doc.select_node("/ODX/DIAG-LAYER-CONTAINER/ECU-VARIANTS/ECU-VARIANT/PARENT-REFS/PARENT-REF");
+                if (parent_bv) {
+                    String bv_id = parent_bv.node().attribute("ID-REF").value();
+                    if (m_bvMapSubEvs.contains(bv_id)) {
+                        m_bvMapSubEvs[bv_id].push_back(ev);
+                    }
+                    else {
+                        m_bvMapSubEvs[bv_id] = { ev };
+                    }
+                    WH_INFO("parent bv: {}", bv_id);
                 }
             }
         }
 
 
-        for (auto& [id, fileName] : m_dlcFiles) {
+        /*for (auto& [id, fileName] : m_dlcFiles) {
         	m_dlcMap[id] = CreateRef<DiagLayerContainer>(DiagLayerContainer(id));
-        }
+        }*/
 
         pugi::xml_document visDoc;
         pugi::xml_parse_result visResult = visDoc.load_file(m_visFile.c_str());
@@ -1391,10 +1419,10 @@ namespace whale {
                 pugi::xml_node node = doc.child("ODX").child("DIAG-LAYER-CONTAINER").first_child();
                 while (node &&
                     !(strcmp(node.name(), "ECU-SHARED-DATAS") == 0 ||
-                        strcmp(node.name(), "BASE-VARIANTS") == 0 ||
-                        strcmp(node.name(), "ECU-VARIANTS") == 0 ||
-                        strcmp(node.name(), "FUNCTIONAL-GROUPS") == 0 ||
-                        strcmp(node.name(), "PROTOCOLS") == 0)
+                      strcmp(node.name(), "BASE-VARIANTS") == 0 ||
+                      strcmp(node.name(), "ECU-VARIANTS") == 0 ||
+                      strcmp(node.name(), "FUNCTIONAL-GROUPS") == 0 ||
+                      strcmp(node.name(), "PROTOCOLS") == 0)
                     ) {
                     node = node.next_sibling();
                 }
@@ -1424,7 +1452,7 @@ namespace whale {
                 return this->addDlcById(id);
             }
             else {
-                WH_ERROR("Diag Layer Container not found!");
+                WH_ERROR("Diag Layer Container [{}] not found!", id);
             }
         }
         return nullptr;
