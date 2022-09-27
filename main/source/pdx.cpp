@@ -976,9 +976,9 @@ namespace whale {
         }
 
         // ComParam Refs
-        for (auto& cpr : node.child("COMPARAM-REFS").children("COMPARAM-REF")) {
+        /*for (auto& cpr : node.child("COMPARAM-REFS").children("COMPARAM-REF")) {
             m_comparamRefs.emplace_back(ComParamRef(cpr));
-        }
+        }*/
 
         // Ecu Variant Patterns
         /*for (auto& pattern : node.child("ECU-VARIANT-PATTERNS").children("ECU-VARIANT-PATTERN")) {
@@ -1025,9 +1025,9 @@ namespace whale {
                 }
             }*/
 
-        if (m_containerType == "ECU-VARIANT") {
+        /*if (m_containerType == "ECU-VARIANT") {
             m_parentRefs.begin()->second.parentDlc->m_subEcuVariants.push_back(m_id);
-        }
+        }*/
     }
 
 
@@ -1194,14 +1194,14 @@ namespace whale {
         return allServices;
     }
 
-    const Vec<String>& DiagLayerContainer::getSubEvShortNames(const String&) const
+    /*const Vec<String>& DiagLayerContainer::getSubEvShortNames(const String&) const
     {
         WH_INFO("In ev: {}", m_id);
         for (auto subev : m_subEcuVariants) {
             WH_INFO("\tcurrent sub ev: {}", subev);
         }
         return m_subEcuVariants;
-    }
+    }*/
 
     std::set<std::shared_ptr<DiagService>> DiagLayerContainer::getDiagServicesByValue(unsigned value) const {
         std::set<std::shared_ptr<DiagService>> allDiagComms;
@@ -1329,7 +1329,7 @@ namespace whale {
                     auto pos = fileName.find_first_of('_', 5);
                     auto shortName = fileName.substr(0, pos);
                     m_dlcFiles[shortName] = fileName;
-                    m_bvs.push_back(shortName);
+                    bvs.push_back(shortName);
                 }
                 else if (fileType == "EV") {
                     auto pos = fileName.find("_d.odx");
@@ -1354,10 +1354,28 @@ namespace whale {
                     else {
                         m_bvMapSubEvs[bv_id] = { ev };
                     }
-                    WH_INFO("parent bv: {}", bv_id);
+                    //WH_INFO("parent bv: {}", bv_id);
                 }
             }
         }
+
+        for (auto& bv : bvs) {
+            if (doc.load_file(m_dlcFiles[bv].c_str())) {
+                auto comparamRefs = doc.select_node("/ODX/DIAG-LAYER-CONTAINER/BASE-VARIANTS/BASE-VARIANT/COMPARAM-REFS");
+                if (comparamRefs) {
+                    //WH_INFO("parent bv: {}", bv);
+                    for (const auto& cr : comparamRefs.node().children()) {
+                        auto value = cr.child("VALUE").text().as_int();
+                        if (value != 0 && !m_canIdMapBv.contains(value)) {
+                            m_canIdMapBv[value] = bv;
+                            //WH_INFO("insert can id and bv: {} - {}", value, bv);
+                        }
+                    }
+                }
+            }
+        }
+
+        auto bcm = getEvByShortName("EV_BCM37w_006");
 
 
         /*for (auto& [id, fileName] : m_dlcFiles) {
@@ -1477,7 +1495,7 @@ namespace whale {
 
     Ref<DiagLayerContainer> PDX::addDlcById(const String& id)
     {
-        if (m_dlcMap.count(id)) {
+        if (m_dlcFiles.count(id)) {
             m_dlcMap[id] = CreateRef<DiagLayerContainer>(DiagLayerContainer(id));
         }
         return m_dlcMap[id];
@@ -1616,7 +1634,7 @@ namespace whale {
 
     Vec<String> PDX::getEvShortNamesByBvId(const String& id) {
         WH_INFO("request bv: {}", id);
-        return m_dlcMap[id]->getSubEvShortNames(id);
+        return m_bvMapSubEvs[id];
     }
 
 }

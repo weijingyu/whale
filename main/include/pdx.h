@@ -545,10 +545,10 @@ namespace whale {
         Map<String, Ref<Response>>				m_negResponses;
         Map<String, Ref<Response>>				m_globalNegResponses;
 
-        Vec<ComParamRef>						m_comparamRefs;
-        Vec<Reference>							m_importRefs;
+        //Vec<ComParamRef>						m_comparamRefs;
+        //Vec<Reference>							m_importRefs;
         Map<String, ParentRef>					m_parentRefs;
-        Reference								m_comParamSpecRef;
+        //Reference								m_comParamSpecRef;
 
         // Vec<EcuVariantPattern>					m_ecuVariantPatterns;
 
@@ -557,7 +557,7 @@ namespace whale {
 
     private:
         Map<String, Ref<DiagLayerContainer>>	m_referencedDlcs;
-        Vec<String>								m_subEcuVariants;
+        //Vec<String>								m_subEcuVariants;
 
 
     public:
@@ -580,7 +580,7 @@ namespace whale {
 
         const Map<String, DiagComm>& getAllDiagComms() const;
         Vec<Ref<DiagService>> getAllDiagServices();
-        const Vec<String>& getSubEvShortNames(const String&) const;
+        //const Vec<String>& getSubEvShortNames(const String&) const;
         std::set<Ref<DiagService>> getDiagServicesByValue(unsigned value) const;
 
         const String& shortName() const {
@@ -712,6 +712,7 @@ namespace whale {
 
         Vec<String> cps;
         Vec<String> m_bvs;
+        Map<int, String> m_canIdMapBv;
         Map<String, Vec<String>> m_bvMapSubEvs;
         Map<String, Ref<DiagLayerContainer>> m_dlcMap;
         Map<String, Ref<ComParamSpec>> m_comparamSpecs;
