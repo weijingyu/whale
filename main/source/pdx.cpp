@@ -62,12 +62,12 @@ namespace whale {
         return description;
     }
 
-    Map<String, int> ParentRefType{
+    /*Map<String, int> ParentRefType{
         { "PROTOCOL-REF", 0 },
         { "FUNCTIONAL-GROUP-REF", 1 },
         { "BASE-VARIANT-REF", 2 },
         { "ECU-SHARED-DATA-REF", 3}
-    };
+    };*/
 
     PDX PDX::s_instance;
 
@@ -76,6 +76,13 @@ namespace whale {
         : idRef(getIdRefFromXml(node)),
         docRef(getDocRefFromXml(node)),
         docType(getDocTypeFromXml(node))
+    {
+    }
+
+    Reference::Reference(const Reference& rhs)
+        : idRef(rhs.idRef),
+        docRef(rhs.docRef),
+        docType(rhs.docType)
     {
     }
 
@@ -158,7 +165,7 @@ namespace whale {
         }
         else if (xsiType == "PARAM-LENGTH-INFO-TYPE") {
             m_xsiType = DiagCodedType_E::StandardLength;
-        }   
+        }
 
         m_baseDataType = node.attribute("BASE-DATA-TYPE").value();
 
@@ -173,7 +180,7 @@ namespace whale {
         }
 
         for (auto& child : node.children()) {
-            if (!strcmp(child.name(),"BIT-LENGTH")) {
+            if (!strcmp(child.name(), "BIT-LENGTH")) {
                 m_bitLength = child.text().as_uint();
             }
             if (!strcmp(child.name(), "BIT-MASK")) {
@@ -786,14 +793,34 @@ namespace whale {
     // ----- End: SinglEcuVariantPatterneEcuJob -----
 
     // ----- Start: Class ParentRef -----
-    ParentRef::ParentRef(const pugi::xml_node& node, const Ref<DiagLayerContainer>& dlc)
-        : Reference(node), xsiType(getXsiTypeFromXml(node)), parentDlc(dlc)
+    ParentRef::ParentRef(const pugi::xml_node& node)
+        : Reference(node)
     {
+        String parentRefType = getXsiTypeFromXml(node);
+        if (parentRefType == "PROTOCOL-REF") {
+            m_type = ParentRefType::Protocol;
+        }
+        else if (parentRefType == "FUNCTIONAL-GROUP-REF") {
+            m_type = ParentRefType::FunctionalGroup;
+        }
+        else if (parentRefType == "BASE-VARIANT-REF") {
+            m_type = ParentRefType::BasicVariant;
+        }
+        else if (parentRefType == "ECU-SHARED-DATA-REF") {
+            m_type = ParentRefType::EcuSharedData;
+        }
+
         for (auto& diagComm : node.child("NOT-INHERITED-DIAG-COMMS").children()) {
             notInheritedDiagComms.insert(diagComm.child("DIAG-COMM-SNREF").attribute("SHORT-NAME").value());
         }
-        parentRefType = ParentRefType[xsiType];
     }
+
+    /*ParentRef::ParentRef(const ParentRef& rhs)
+        :
+        m_type(rhs.m_type),
+        notInheritedDiagComms(rhs.notInheritedDiagComms)
+    {
+    }*/
     // ----- End: Class ParentRef -----
 
     // ---- Start: DiagLayerContainer -----
@@ -823,7 +850,8 @@ namespace whale {
         for (const auto& ref : node.child("IMPORT-REFS").children()) {
             auto id = getIdRefFromXml(ref);
             if (!PDX::get().getDlcById(id)) {
-                m_referencedDlcs[id] = PDX::get().addDlcById(id);
+                //m_referencedDlcs[id] = PDX::get().addDlcById(id);
+                PDX::get().addDlcById(id);
             }
             // m_importRefs.emplace_back(Reference(ref));
         }
@@ -835,7 +863,7 @@ namespace whale {
             if (!parentDlc) {
                 parentDlc = PDX::get().addDlcById(parentId);
             }
-            m_parentRefs[parentId] = ParentRef(ref, parentDlc);
+            m_parentRefs.emplace_back(ParentRef(ref));
 
             /*bool alreadyParented = false;
             for (auto& [id, grandParent] : parentDlc->m_parentRefs) {
@@ -1025,9 +1053,9 @@ namespace whale {
                 }
             }*/
 
-        /*if (m_containerType == "ECU-VARIANT") {
-            m_parentRefs.begin()->second.parentDlc->m_subEcuVariants.push_back(m_id);
-        }*/
+            /*if (m_containerType == "ECU-VARIANT") {
+                m_parentRefs.begin()->second.parentDlc->m_subEcuVariants.push_back(m_id);
+            }*/
     }
 
 
@@ -1154,27 +1182,25 @@ namespace whale {
     }
 
     void DiagLayerContainer::inherit() {
-        for (const auto& type : { "PROTOCOL-REF", "FUNCTIONAL-GROUP-REF", "BASE-VARIANT-REF", "ECU-SHARED-DATA-REF" }) {
-            for (auto& [id, parentRef] : m_parentRefs) {
-                std::cout << "Current parent: " + id << std::endl;
-                if (parentRef.xsiType == type) {
-                    std::cout << "\tGettring inherited services from: [" << id << "]\n";
-                    auto parentDiagComms = parentRef.parentDlc->getAllDiagComms();
-                    if (parentDiagComms.size() > 0) {
-                        for (auto& [id, value] : parentDiagComms) {
-                            auto shortName = value.shortName;
-                            if (parentRef.notInheritedDiagComms.count(shortName)) {
-                                std::cout << "\tDiagComm [" << id << "] is not inherited." << std::endl;
-                            }
-                            else {
-                                if (m_diagComms.count(id)) {
-                                    std::cout << "\tDiagComm [" << id << "] exist, ignored!" << std::endl;
-                                }
-                                else {
-                                    std::cout << "\tDiagComm [" << id << "] inherited from [" + parentRef.docRef + "]" << std::endl;
-                                    m_diagComms[id] = value;
-                                }
-                            }
+        auto allParentRefs = this->getAllParentRefs();
+        std::sort(allParentRefs.begin(), allParentRefs.end());
+
+        for (auto& parentRef : allParentRefs) {
+            WH_INFO("Current parent: {}", parentRef.idRef);
+            auto parentDiagComms = PDX::get().getDlcById(parentRef.idRef)->getAllDiagComms();
+            if (parentDiagComms.size() > 0) {
+                for (auto& [id, value] : parentDiagComms) {
+                    auto shortName = value.shortName;
+                    if (parentRef.notInheritedDiagComms.count(shortName)) {
+                        std::cout << "\tDiagComm [" << id << "] is not inherited." << std::endl;
+                    }
+                    else {
+                        if (m_diagComms.count(id)) {
+                            std::cout << "\tDiagComm [" << id << "] exist, ignored!" << std::endl;
+                        }
+                        else {
+                            std::cout << "\tDiagComm [" << id << "] inherited from [" + parentRef.docRef + "]" << std::endl;
+                            m_diagComms[id] = value;
                         }
                     }
                 }
@@ -1194,6 +1220,24 @@ namespace whale {
         return allServices;
     }
 
+    Vec<ParentRef> DiagLayerContainer::getAllParentRefs() {
+
+        Vec<ParentRef> allParentRefs;
+        for (auto parentRef : m_parentRefs) {
+            for (auto ref : PDX::get().getDlcById(parentRef.idRef)->getAllParentRefs()) {
+                auto pos = std::find(allParentRefs.begin(), allParentRefs.end(), ref);
+
+                if (pos != allParentRefs.end()) {
+                    pos->notInheritedDiagComms.merge(ref.notInheritedDiagComms);
+                }
+                else {
+                    allParentRefs.push_back(ref);
+                }
+            }
+        }
+        return allParentRefs;
+    }
+
     /*const Vec<String>& DiagLayerContainer::getSubEvShortNames(const String&) const
     {
         WH_INFO("In ev: {}", m_id);
@@ -1203,8 +1247,8 @@ namespace whale {
         return m_subEcuVariants;
     }*/
 
-    std::set<std::shared_ptr<DiagService>> DiagLayerContainer::getDiagServicesByValue(unsigned value) const {
-        std::set<std::shared_ptr<DiagService>> allDiagComms;
+    Set<std::shared_ptr<DiagService>> DiagLayerContainer::getDiagServicesByValue(unsigned value) const {
+        Set<std::shared_ptr<DiagService>> allDiagComms;
         /*for (auto& [key, diagComm] : m_diagServices) {
             if (diagComm->m_request->m_params.at(0).m_codedValue == value) {
                 allDiagComms.insert(diagComm);
@@ -1304,7 +1348,7 @@ namespace whale {
     {
         WH_INFO("Current path: {}", path);
         std::filesystem::current_path(path);
-        
+
         pugi::xml_document doc; // vehicle info spec
         pugi::xml_parse_result result = doc.load_file("index.xml");
 
@@ -1379,7 +1423,7 @@ namespace whale {
 
 
         /*for (auto& [id, fileName] : m_dlcFiles) {
-        	m_dlcMap[id] = CreateRef<DiagLayerContainer>(DiagLayerContainer(id));
+            m_dlcMap[id] = CreateRef<DiagLayerContainer>(DiagLayerContainer(id));
         }*/
 
         pugi::xml_document visDoc;
@@ -1437,10 +1481,10 @@ namespace whale {
                 pugi::xml_node node = doc.child("ODX").child("DIAG-LAYER-CONTAINER").first_child();
                 while (node &&
                     !(strcmp(node.name(), "ECU-SHARED-DATAS") == 0 ||
-                      strcmp(node.name(), "BASE-VARIANTS") == 0 ||
-                      strcmp(node.name(), "ECU-VARIANTS") == 0 ||
-                      strcmp(node.name(), "FUNCTIONAL-GROUPS") == 0 ||
-                      strcmp(node.name(), "PROTOCOLS") == 0)
+                    strcmp(node.name(), "BASE-VARIANTS") == 0 ||
+                    strcmp(node.name(), "ECU-VARIANTS") == 0 ||
+                    strcmp(node.name(), "FUNCTIONAL-GROUPS") == 0 ||
+                    strcmp(node.name(), "PROTOCOLS") == 0)
                     ) {
                     node = node.next_sibling();
                 }

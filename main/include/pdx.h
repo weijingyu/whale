@@ -47,7 +47,7 @@ namespace whale {
 
         Reference() = default;
         Reference(const pugi::xml_node&);
-        //Reference(const Reference& rhs);
+        Reference(const Reference& rhs);
         Reference(String id, String doc = "", String type = "");
     };
 
@@ -502,17 +502,20 @@ namespace whale {
 
     // ---------------------------
     struct ParentRef : public Reference {
-        String xsiType;
-        int parentRefType;
+        ParentRefType m_type;
         Set<String> notInheritedDiagComms;
-        Ref<DiagLayerContainer> parentDlc;
-        //unsigned m_parentRefType;
+        //Ref<DiagLayerContainer> parentDlc;
 
         ParentRef() = default;
-        ParentRef(const pugi::xml_node& node, const Ref<DiagLayerContainer>& parentDlc);
+        //ParentRef(const ParentRef& rhs);
+        ParentRef(const pugi::xml_node& node);
 
         bool operator<(const ParentRef& other) const {
-            return parentRefType < other.parentRefType;
+            return m_type < other.m_type;
+        }
+
+        bool operator==(const ParentRef& other) const {
+            return idRef == other.idRef;
         }
     };
     // ---------------------------
@@ -547,7 +550,7 @@ namespace whale {
 
         //Vec<ComParamRef>						m_comparamRefs;
         //Vec<Reference>							m_importRefs;
-        Map<String, ParentRef>					m_parentRefs;
+        Vec<ParentRef>					        m_parentRefs;
         //Reference								m_comParamSpecRef;
 
         // Vec<EcuVariantPattern>					m_ecuVariantPatterns;
@@ -556,7 +559,7 @@ namespace whale {
         void inherit();
 
     private:
-        Map<String, Ref<DiagLayerContainer>>	m_referencedDlcs;
+        //Map<String, Ref<DiagLayerContainer>>	m_referencedDlcs;
         //Vec<String>								m_subEcuVariants;
 
 
@@ -577,11 +580,12 @@ namespace whale {
         Ref<PhysicalDimension>	getPhysicalDimensionById(const String& id) const;
         Ref<DataObjectProp>		getDopByShortName(const String& shortName) const;
         DiagComm				getDiagCommById(const String& id) const;
+        Vec<ParentRef>          getAllParentRefs();
 
         const Map<String, DiagComm>& getAllDiagComms() const;
         Vec<Ref<DiagService>> getAllDiagServices();
         //const Vec<String>& getSubEvShortNames(const String&) const;
-        std::set<Ref<DiagService>> getDiagServicesByValue(unsigned value) const;
+        Set<Ref<DiagService>> getDiagServicesByValue(unsigned value) const;
 
         const String& shortName() const {
             return m_shortName;
