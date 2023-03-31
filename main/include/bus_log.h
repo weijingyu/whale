@@ -38,6 +38,8 @@ namespace whale {
 	struct EcuTrace {
 		ECU ecu;
 		std::vector<Trace> traces;
+
+		void decode();
 	};
 
 	/*

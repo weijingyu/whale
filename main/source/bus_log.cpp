@@ -1,5 +1,8 @@
 #include "bus_log.h"
 #include <algorithm>
+#include "pdx.h"
+#include <log.h>
+
 
 namespace whale {
 
@@ -101,7 +104,11 @@ namespace whale {
 
 	const EcuTrace& BusLog::ecuTrace(std::string ecuName)
 	{
-		return _ecuTraceMap[ecuName];
+		auto& ecuTrace = _ecuTraceMap[ecuName];
+
+		ecuTrace.decode();
+
+		return ecuTrace;
 	}
 
 	EcuTraceMap* BusLog::ecuTraces()
@@ -120,7 +127,45 @@ namespace whale {
 		}
 		std::sort(ecuList.begin(), ecuList.end(), compareEcu);
 
+		WH_INFO("Got total of {} ecus.", ecuList.size());
 		return ecuList;
+	}
+
+	void EcuTrace::decode()
+	{
+		String evName, evVersion;
+		for (auto& trace : traces) {
+			String hexString = trace.hexTrace;
+			if (hexString.size() > 6 && hexString.substr(0, 6) == "62f19e") {
+				auto response = trace.hexTrace.substr(6);
+				evName = whale::hexToString(response);
+				if (evName.back() == '\0') {
+					evName.pop_back();
+				}
+			}
+			if (!evName.empty() && hexString.substr(0, 6) == "62f1a2") {
+				auto response = trace.hexTrace.substr(6);
+				evVersion = whale::hexToString(response);
+				break;
+			}
+		}
+
+		if (!evName.empty()) {
+			auto ev = PDX::get().getDlcById(evName + "_" + evVersion.substr(0, 3));
+
+			if (ev != nullptr) {
+				WH_INFO("Get EV: {}", ev->id());
+
+				WH_INFO("DiagServices in [{}]:", ev->shortName());
+				ev->inherit();
+				for (auto& ds : ev->getAllDiagServices()) {
+					WH_INFO("{}", ds->id());
+				}
+				for (auto& trace : traces) {
+					//trace.hexTrace = ev.decode(trace.hexTrace);
+				}
+			}
+		}
 	}
 
 }

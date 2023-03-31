@@ -64,6 +64,8 @@ namespace whale {
         bool m_showTraceBrowser;
         bool m_showOdxBrowser;
 
+        bool m_reloadBusLog = false;
+
         BusLog* m_busLog = nullptr;
         PDX* m_pdx = nullptr;
 

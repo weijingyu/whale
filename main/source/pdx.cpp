@@ -5,10 +5,24 @@
 #include <filesystem>
 #include <stdexcept>
 #include <iomanip>
+#include <sstream>
 
 #include <log.h>
 
 namespace whale {
+    String hexToString(const String& hex) {
+        String str;
+        std::stringstream ss;
+
+        for (size_t i = 0; i < hex.length(); i += 2) {
+            String byte = hex.substr(i, 2);
+            char chr = (char)(int)strtol(byte.c_str(), NULL, 16);
+            str.push_back(chr);
+        }
+
+        return str;
+    }
+
     inline String getIdFromXml(const pugi::xml_node& xmlNode) {
         return xmlNode.attribute("ID").value();
     }
@@ -1208,6 +1222,7 @@ namespace whale {
 
         Vec<ParentRef> allParentRefs;
         for (auto parentRef : m_parentRefs) {
+            allParentRefs.push_back(parentRef);
             for (auto ref : PDX::get().getDlcById(parentRef.idRef)->getAllParentRefs()) {
                 auto pos = std::find(allParentRefs.begin(), allParentRefs.end(), ref);
 
@@ -1403,7 +1418,7 @@ namespace whale {
             }
         }
 
-        auto bcm = getEvByShortName("EV_BCM37w_006");
+        // auto bcm = getEvByShortName("EV_BCM37w_006");
 
 
         /*for (auto& [id, fileName] : m_dlcFiles) {
@@ -1451,6 +1466,8 @@ namespace whale {
     {
         auto evDlc = getDlcById(evName);
         evDlc->inherit();
+        WH_INFO("get ev: {}", evName);
+
         return evDlc;
     }
 
@@ -1501,6 +1518,7 @@ namespace whale {
                 WH_ERROR("Diag Layer Container [{}] not found!", id);
             }
         }
+        WH_INFO("get dlc: {}", id);
         return nullptr;
     }
 

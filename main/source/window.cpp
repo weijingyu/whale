@@ -123,6 +123,7 @@ namespace whale {
                         if (ImGui::MenuItem("Open Log File")) {
                             fs::openFileBrowser(fs::DialogMode::Open, {}, [this](const std::fs::path& path) {
                                 this->m_busLog = new BusLog(path);
+                                this->m_reloadBusLog = true;
                                 });
                         }
                         ImGui::EndMenu();
@@ -180,15 +181,22 @@ namespace whale {
         if (this->m_showTraceBrowser) {
             this->showTraceBrowser(&this->m_showTraceBrowser);
         }
-        if (this->m_showOdxBrowser) {
+        /*if (this->m_showOdxBrowser) {
             this->showOdxBrowser(&this->m_showOdxBrowser);
-        }
+        }*/
     }
 
     // Demonstrate create a window with multiple child windows.
     void Window::showTraceBrowser(bool* p_open)
     {
         static std::string selectedEcu;
+        static std::string prevSelectedEcu;
+        static std::vector<std::string> ecuList;
+
+        if (m_reloadBusLog) {
+            ecuList = this->m_busLog->getEcuList();
+            this->m_reloadBusLog = false;
+        }
         //ImGui::SetNextWindowSize(ImVec2(500, 440), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("ECU List", nullptr, true))
         {
@@ -198,7 +206,7 @@ namespace whale {
                 {
                     ImGui::BeginChild("left pane", ImVec2(0, 0), true);
 
-                    for (auto& ecuName : this->m_busLog->getEcuList()) {
+                    for (auto& ecuName : ecuList) {
                         if (ImGui::Selectable(ecuName.c_str(), selectedEcu == ecuName)) {
                             selectedEcu = ecuName;
                         }
@@ -210,20 +218,29 @@ namespace whale {
             ImGui::End();
         }
 
+        static EcuTrace ecuTrace;
+        //WH_INFO("Selected: {}, prev: {}", selectedEcu, prevSelectedEcu);
+        if (prevSelectedEcu != selectedEcu) {
+            ecuTrace = this->m_busLog->ecuTrace(selectedEcu);
+            prevSelectedEcu = selectedEcu;
+        }
+
         if (ImGui::Begin("Trace Browser"), nullptr, true) {
 
             // Right
             if (selectedEcu != "") {
-                auto ecuTrace = this->m_busLog->ecuTrace(selectedEcu);
-                static ImGuiTableFlags flags = ImGuiTableFlags_Resizable |
-                    ImGuiTableFlags_Reorderable |
-                    ImGuiTableFlags_Hideable |
-                    ImGuiTableFlags_RowBg |
+                static ImGuiTableFlags flags =
+                    ImGuiTableFlags_Resizable    |
+                    ImGuiTableFlags_Reorderable  |
+                    ImGuiTableFlags_ScrollY      |
+                    ImGuiTableFlags_Hideable     |
+                    ImGuiTableFlags_RowBg        |
                     ImGuiTableFlags_BordersOuter |
-                    ImGuiTableFlags_BordersH |
+                    ImGuiTableFlags_BordersH     |
                     ImGuiTableFlags_BordersV;
 
                 if (ImGui::BeginTable("TraceTable", 4, flags)) {
+                    ImGui::TableSetupScrollFreeze(0, 1);
                     ImGui::TableSetupColumn("Time");
                     ImGui::TableSetupColumn("ID");
                     ImGui::TableSetupColumn("Trace");

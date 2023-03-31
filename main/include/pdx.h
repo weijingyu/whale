@@ -726,4 +726,6 @@ namespace whale {
 
         inline static bool m_loaded;
     };
+
+    String hexToString(const String& hex);
 }
