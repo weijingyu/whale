@@ -9,6 +9,8 @@
 
 #include "type.h"
 
+#include "bus_log.h"
+
 
 namespace whale {
 
@@ -51,7 +53,7 @@ namespace whale {
         Reference(String id, String doc = "", String type = "");
     };
 
-    
+
 
     struct ComParamRef : public Reference {
         unsigned m_value;
@@ -78,15 +80,24 @@ namespace whale {
         Unit(const pugi::xml_node&, const Map<String, Ref<PhysicalDimension>>& physDimensionMap);
     };
 
-    enum class DiagCodedType_E {
+    enum class DCType {
         StandardLength,
         MinMaxLength,
         LeadingLengthInfo,
         ParamLengthInfo
     };
 
+
+    enum class BaseTypeEncoding {
+        A_UINT32,
+        A_UNICODE2STRING,
+        A_BYTEFIELD,
+        A_INT32,
+        A_ASCIISTRING,
+    };
+
     struct DiagCodedType {
-        DiagCodedType_E         m_xsiType;
+        DCType                  m_xsiType;
         String                  m_baseDataType;
 
         std::optional<String>   m_baseTypeEncoding;
@@ -101,93 +112,149 @@ namespace whale {
 
         DiagCodedType() = default;
         DiagCodedType(const pugi::xml_node&);
+        String encode(unsigned input);
+        Option<unsigned> coded_value(const String& value);
+        
     };
 
     struct DopBase : public BasicInfo {
         bool m_isVisible;
 
-        // virtual convertPhysicalToInternal();
-        // virtual convetInternalToPhysical();
 
         DopBase(const pugi::xml_node&);
+        //virtual unsigned lowerLimit(const String& physicalValue) {};
+        virtual Option<unsigned> encode(const String&) = 0;
+        virtual String decode(const String&) = 0;
     };
 
-    struct DataObjectProp : public DopBase {
-        struct CompuMethod {
-            struct CompuConst {
-                String m_vt;
-                String m_ti;
-            };
+    struct TextTableCompuScale {
+        String   m_vt;
+        String   m_ti;
+        String   m_shortLabel;
+        unsigned m_lowerLimit = 0;
+        unsigned m_upperLimit = 0;
 
-            struct TextTableCompuScale {
-                CompuConst m_compuConst;
-                std::optional<String>   m_shortLabel;
-                std::optional<unsigned> m_lowerLimit;
-                std::optional<unsigned> m_upperLimit;
-                
-                TextTableCompuScale(const pugi::xml_node& node);
-            };
-            struct LinearCompuScale {
-                String m_description;
-                double m_compuNumerators[2];
-                double m_compuDenominator;
+        TextTableCompuScale() = default;
+        TextTableCompuScale(const pugi::xml_node& node);
+    };
 
-                LinearCompuScale(const pugi::xml_node& node);
-            };
+    /*
+        * Possible compute method:
+        * 1) Identical
+        *    f(x) = x
+        * 2) Linear
+        *    f(x) = a * x + b
+        * 3) Texttable
+        *    internal    physical
+        *     [0, 1)     "1 Min"
+        *     [2, 5)     "2 Min"
+        *     [9, ¡Þ)     "Always"
+        * 4) Scale Linear
+        *           ©° a1 * x + b1
+        *    f(x) = | a2 * x + b2
+        *           ©¸ a3 * x + b3
+        * 5) Tab Interpolated
+        *    internal    physical
+        *     0           0
+        *     2           5
+        *     4           8
+        *     8           10
+        *     10          10
+        *
+        *----- The categories below are not found.
+        *
+        * 5) Rational Function
+        *    f(x) = x^n
+        * 6) Scale Rational Function
+        *    For example:
+        *           ©° x^n, (0 <= x < 2)
+        *    f(x) = |
+        *           ©¸ a * x + b, (2 < x)
+        */
+    struct ComputeMethod {
 
-            String m_category;
+        //ComputeMethod(const pugi::xml_node&);
+        virtual String decode(const String& value) = 0;
+        virtual String decode(unsigned value) = 0;
+        virtual Option<unsigned> encode(const String& value) = 0;
+    };
 
-            Vec<TextTableCompuScale> m_textTableCompuScales;
-            Vec<LinearCompuScale> m_linearCompuScales;
-            std::optional<std::variant<CompuConst, double>> m_compuDefaultValue;
+    struct IdenticalComputeMethod : public ComputeMethod {
+        Option<unsigned> encode(const String& value) override;
+        String decode(const String& value) override;
+        String decode(unsigned value);
+        IdenticalComputeMethod() {};
+    };
 
-            CompuMethod() = default;
-            CompuMethod(const pugi::xml_node&);
-        };
+    struct LinearComputeMethod : public ComputeMethod {
+        String m_description;
+        double m_compuNumerators[2];
+        double m_compuDenominator;
 
-        struct PhysicalType {
-            /*
-            * A Physical Type could be one of:
-            *	a) A_UINT32 { optional: DISPLAY-RADIX="HEX" }
-            *	b) A_UNICODE2STRING
-            *	c) A_FLOAT32 { <PRECISION>3</PRECISION> }
-            *	d) A_BYTEFIELD
-            *	e) A_INT32
-            *	f) A_FLOAT64
-            */
-            String m_baseDataType;
+        LinearComputeMethod(const pugi::xml_node&);
+        Option<unsigned> encode(const String& value) override;
+        String decode(const String& value) override;
+        String decode(unsigned value);
+    };
 
-            std::optional<String>	m_dispayRadix;
-            std::optional<unsigned> m_floatPrecision;
+    struct TextTableComputeMethod : public ComputeMethod {
+        Map<unsigned, TextTableCompuScale> m_textTableCompuScales;
 
-            PhysicalType() = default;
-            PhysicalType(const pugi::xml_node&);
-        };
+        TextTableComputeMethod(const pugi::xml_node&);
+        Option<unsigned> encode(const String& value) override;
+        String decode(const String& value) override;
+        String decode(unsigned value);
+    };
 
-        struct InternalConstr {
+    struct PhysicalType {
+        /*
+        * A Physical Type could be one of:
+        *	a) A_UINT32 { optional: DISPLAY-RADIX="HEX" }
+        *	b) A_UNICODE2STRING
+        *	c) A_FLOAT32 { <PRECISION>3</PRECISION> }
+        *	d) A_BYTEFIELD
+        *	e) A_INT32
+        *	f) A_FLOAT64
+        */
+        String m_baseDataType;
 
-            struct ScaleConstr {
-                String m_validity;
-                String m_shortLabel;
-                String m_shortLabelTI;
-                int m_lowerLimit = 0;
-                int m_upperLimit = 0;
+        std::optional<String>	m_dispayRadix;
+        std::optional<unsigned> m_floatPrecision;
 
-                ScaleConstr(const pugi::xml_node&);
-            };
+        PhysicalType() = default;
+        PhysicalType(const pugi::xml_node&);
+        String encode(const String& value);
+        String decode(const String& value);
+    };
 
+    struct InternalConstr {
+
+        // lets currently leaves this out, because most of them
+        // are not useful in decoding traces
+        /*struct ScaleConstr {
+            String m_validity;
+            String m_shortLabel;
+            String m_shortLabelTI;
             int m_lowerLimit = 0;
             int m_upperLimit = 0;
-            // currently all the types are "CLOSED", so...
-            // String m_lowerLimitType;
-            // String m_upperLimitType;
-            Vec<ScaleConstr> m_scaleConstrs;
 
-            InternalConstr() = default;
-            InternalConstr(const pugi::xml_node&);
-        };
+            ScaleConstr(const pugi::xml_node&);
+        };*/
 
-        CompuMethod m_compuMethod;
+        int m_lowerLimit = 0;
+        int m_upperLimit = 0;
+        // currently all the types are "CLOSED", so...
+        // String m_lowerLimitType;
+        // String m_upperLimitType;
+        //Vec<ScaleConstr> m_scaleConstrs;
+
+        InternalConstr() = default;
+        InternalConstr(const pugi::xml_node&);
+    };
+
+
+    struct DataObjectProp : public DopBase {
+        Ref<ComputeMethod> m_compuMethod;
         DiagCodedType m_diagCodedType;
         PhysicalType m_physicalType;
         InternalConstr m_internalConstr;
@@ -198,7 +265,10 @@ namespace whale {
 
         DataObjectProp() = default;
         DataObjectProp(const pugi::xml_node& node);
+        Option<unsigned> coded_value(const String& str);
         void dereference(const Map<String, Ref<Unit>>& unitMap);
+        Option<unsigned> encode(const String& value) override;
+        String decode(const String& value) override;
     };
 
     struct DTC : public BasicInfo {
@@ -231,6 +301,8 @@ namespace whale {
         unsigned m_bitPosition = 0;
 
         Param(const pugi::xml_node&);
+        virtual String decode(const String& text) = 0;
+        virtual String encode(const String& text) = 0;
     };
 
     struct DiagLayerContainer;
@@ -242,6 +314,8 @@ namespace whale {
         ParamWithDop(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
     private:
         void dereference(DiagLayerContainer* parentDlc);
+        String decode(const String& text) override;
+        String encode(const String& text) override;
     };
 
     struct CodedConstParam : public Param {
@@ -249,6 +323,8 @@ namespace whale {
         unsigned m_codedValue;
 
         CodedConstParam(const pugi::xml_node&);
+        String decode(const String& text) override;
+        String encode(const String& text) override;
     };
 
     struct ReservedParam : public Param {
@@ -256,6 +332,8 @@ namespace whale {
         DiagCodedType m_diagCodedType;
 
         ReservedParam(const pugi::xml_node&);
+        String decode(const String& text) override;
+        String encode(const String& text) override;
     };
 
     struct MatchingRequestParam : public Param {
@@ -263,24 +341,35 @@ namespace whale {
         unsigned m_byteLength;
 
         MatchingRequestParam(const pugi::xml_node&);
+        String decode(const String& text) override;
+        String encode(const String& text) override;
     };
 
     struct ValueParam : public ParamWithDop {
         String m_physicalDefaultValue;
 
         ValueParam(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
+        String decode(const String& text) override;
+        String encode(const String& text) override;
     };
 
     struct PhysConstParam : public ParamWithDop {
         String m_physConstantValue;
 
         PhysConstParam(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
+        String decode(const String& text) override;
+        String encode(const String& text) override;
+
+    private:
+        unsigned m_constLowerLimit = 0;
     };
 
     struct LengthKeyParam : public ParamWithDop {
         String m_id;
 
         LengthKeyParam(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
+        String decode(const String& text) override;
+        String encode(const String& text) override;
     };
 
     struct StructBase : public DopBase {
@@ -289,6 +378,8 @@ namespace whale {
 
         StructBase() = default;
         StructBase(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
+        String decode(const String& text) override;
+        Option<unsigned> encode(const String& text) override;
     };
 
     struct Structure : public StructBase {
@@ -327,6 +418,8 @@ namespace whale {
 
         TableKeyParam(const pugi::xml_node& node);
         void dereference(const Map<String, Ref<Table>>& tableMap);
+        String decode(const String& text) override;
+        String encode(const String& text) override;
     };
 
     struct TableStructParam : public Param {
@@ -336,6 +429,8 @@ namespace whale {
         // TableStructParam seems always reference to  TableKeyParam in the same structure
         TableStructParam(const pugi::xml_node& node);
         void dereference(Ref<StructBase> parentStuct);
+        String decode(const String& text) override;
+        String encode(const String& text) override;
     };
 
     struct Request : public StructBase {
@@ -449,8 +544,14 @@ namespace whale {
         Ref<Response> m_negResponse = nullptr;
 
     public:
+        bool decode(Trace& trace);
+        int serviceId();
         DiagService(const pugi::xml_node&);
-        std::optional<std::string> decode(const std::string& message);
+        void dereference(DiagLayerContainer* dlc);
+
+    private:
+        bool m_derefed{ false };
+        int m_serviceId{ -1 };
     };
 
     struct SingleEcuJob : public BasicInfo {
@@ -521,7 +622,7 @@ namespace whale {
     // ---------------------------
 
     struct DiagLayerContainer : public BasicInfo {
-        
+
 
 
         String m_containerType;
@@ -557,6 +658,7 @@ namespace whale {
 
         bool m_parentLoaded = false;
         void inherit();
+        void dereference();
 
     private:
         //Map<String, Ref<DiagLayerContainer>>	m_referencedDlcs;
@@ -565,6 +667,10 @@ namespace whale {
 
     public:
         DiagLayerContainer(const String& dlcName);
+
+        void decode(Trace& trace);
+        void decodeEcuTrace(EcuTrace& ecuTrace);
+        void inheritDiagServices();
 
         Ref<FunctClass>			getFunctClassById(const String&) const;
         Ref<Request>			getRequestById(const String&) const;
@@ -580,7 +686,7 @@ namespace whale {
         Ref<PhysicalDimension>	getPhysicalDimensionById(const String& id) const;
         Ref<DataObjectProp>		getDopByShortName(const String& shortName) const;
         DiagComm				getDiagCommById(const String& id) const;
-        Vec<ParentRef>          getAllParentRefs();
+        Vec<ParentRef>          getAllParentRefs() const;
 
         const Map<String, DiagComm>& getAllDiagComms() const;
         Vec<Ref<DiagService>> getAllDiagServices();
@@ -686,6 +792,7 @@ namespace whale {
             return m_loaded;
         }
 
+        void decodeEcuTrace(EcuTrace& ecuTrace);
         Vec<String> getEvShortNamesByBvId(const String& id);
         Vec<String> getBvShortNamesByVehicleInfoId(const String& id);
         Vec<String> getLogicalLinksByVehicleInfoId(const String& id);
@@ -704,6 +811,7 @@ namespace whale {
         Ref<Table> getTableByDocAndId(const String& doc, const String& id);
         Ref<PhysicalDimension> getPhysicalDimensionByDocAndId(const String& doc, const String& id);
         DiagComm getDiagCommByDocAndId(const String& doc, const String& id);
+        Ref<DiagService> getDiagServiceByDocAndId(const String& doc, const String& id);
 
     private:
         PDX() {}

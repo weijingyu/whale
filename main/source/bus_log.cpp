@@ -69,7 +69,7 @@ namespace whale {
 				// First frame
 				if (trace[0] == '1') {
 					size_t length = 0;
-					std::istringstream(trace.substr(2, 3)) >> std::hex >> length;
+					std::istringstream(hexTrace.substr(1, 3)) >> std::hex >> length;
 					std::string nextLine;
 					size_t currentLength = 6;
 					hexTrace = hexTrace.substr(4);
@@ -106,7 +106,7 @@ namespace whale {
 	{
 		auto& ecuTrace = _ecuTraceMap[ecuName];
 
-		ecuTrace.decode();
+		PDX::get().decodeEcuTrace(ecuTrace);
 
 		return ecuTrace;
 	}
@@ -158,11 +158,8 @@ namespace whale {
 
 				WH_INFO("DiagServices in [{}]:", ev->shortName());
 				ev->inherit();
-				for (auto& ds : ev->getAllDiagServices()) {
-					WH_INFO("{}", ds->id());
-				}
 				for (auto& trace : traces) {
-					//trace.hexTrace = ev.decode(trace.hexTrace);
+					ev->decode(trace);
 				}
 			}
 		}

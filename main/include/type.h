@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <vector>
 #include <filesystem>
+#include <optional>
 
 template<typename T>
 using Ref = std::shared_ptr<T>;
@@ -16,6 +17,9 @@ constexpr Ref<T> CreateRef(Args&& ... args) {
 
 typedef std::string ID;
 using String = std::string;
+
+template<typename T>
+using Option = std::optional<T>;
 
 template<typename K, typename V>
 using Map = std::unordered_map<K, V>;

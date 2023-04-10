@@ -151,16 +151,16 @@ namespace whale {
     {
         String xsiType = node.attribute("xsi:type").value();
         if (xsiType == "STANDARD-LENGTH-TYPE") {
-            m_xsiType = DiagCodedType_E::StandardLength;
+            m_xsiType = DCType::StandardLength;
         }
         else if (xsiType == "MIN-MAX-LENGTH-TYPE") {
-            m_xsiType = DiagCodedType_E::StandardLength;
+            m_xsiType = DCType::StandardLength;
         }
         else if (xsiType == "LEADING-LENGTH-INFO-TYPE") {
-            m_xsiType = DiagCodedType_E::StandardLength;
+            m_xsiType = DCType::StandardLength;
         }
         else if (xsiType == "PARAM-LENGTH-INFO-TYPE") {
-            m_xsiType = DiagCodedType_E::StandardLength;
+            m_xsiType = DCType::StandardLength;
         }
 
         m_baseDataType = node.attribute("BASE-DATA-TYPE").value();
@@ -193,6 +193,26 @@ namespace whale {
             }
         }
     }
+    String DiagCodedType::encode(unsigned input)
+    {
+        return String();
+    }
+    Option<unsigned> DiagCodedType::coded_value(const String& value)
+    {
+        unsigned bit_mask;
+        switch (m_xsiType) {
+        case DCType::StandardLength:
+            String data = value.substr(0, m_bitLength.value() / 8 + 1);
+            unsigned data_dec = stoi(data, 0, 16);
+            if (m_bitMask) {
+                bit_mask = stoi(m_bitMask.value(), 0, 16);
+                return data_dec & bit_mask;
+            }
+            return data_dec;
+        }
+
+        return std::nullopt;
+    }
     // ----- End: DiagCodedType -----
 
     // ----- Start: DopBase -----
@@ -205,7 +225,15 @@ namespace whale {
     DataObjectProp::DataObjectProp(const pugi::xml_node& node)
         : DopBase(node)
     {
-        m_compuMethod = CompuMethod(node.child("COMPU-METHOD"));
+        if (!strcmp(node.child("COMPU-METHOD").child_value("CATEGORY"), "IDENTICAL")) {
+            m_compuMethod = CreateRef<IdenticalComputeMethod>(IdenticalComputeMethod());
+        }
+        else if (!strcmp(node.child("COMPU-METHOD").child_value("CATEGORY"), "TEXTTABLE")) {
+            m_compuMethod = CreateRef<TextTableComputeMethod>(TextTableComputeMethod(node.child("COMPU-METHOD")));
+        }
+        else if (!strcmp(node.child("COMPU-METHOD").child_value("CATEGORY"), "LINEAR")) {
+            m_compuMethod = CreateRef<LinearComputeMethod>(LinearComputeMethod(node.child("COMPU-METHOD")));
+        }
         m_diagCodedType = DiagCodedType(node.child("DIAG-CODED-TYPE"));
         m_physicalType = PhysicalType(node.child("PHYSICAL-TYPE"));
         m_internalConstr = InternalConstr(node.child("INTERNAL-CONSTR"));
@@ -213,6 +241,11 @@ namespace whale {
         if (const auto& unitRef = node.child("UNIT-REF")) {
             m_unitRef = Reference(unitRef);
         }
+    }
+
+    Option<unsigned> DataObjectProp::coded_value(const String& str)
+    {
+        return m_diagCodedType.coded_value(str);        
     }
 
     void DataObjectProp::dereference(const Map<String, Ref<Unit>>& unitMap)
@@ -232,7 +265,27 @@ namespace whale {
         }
     }
 
-    DataObjectProp::PhysicalType::PhysicalType(const pugi::xml_node& node)
+    // should receive a substring starting from byte_position (and possibly bit_position)
+    Option<unsigned> DataObjectProp::encode(const String& value)
+    {
+        return m_compuMethod->encode(value);
+    }
+
+    String DataObjectProp::decode(const String& value)
+    {
+        String data{};
+        unsigned long bit_mask;
+        switch (m_diagCodedType.m_xsiType) {
+        case DCType::StandardLength:
+            data = value.substr(0, m_diagCodedType.m_bitLength.value() / 8 + 1);
+            if (m_diagCodedType.m_bitMask) {
+                bit_mask = stoi(m_diagCodedType.m_bitMask.value(), 0, 16);
+            }
+        }
+        return String();
+    }
+
+    PhysicalType::PhysicalType(const pugi::xml_node& node)
     {
         m_baseDataType = node.attribute("BASE-DATA-TYPE").value();
 
@@ -249,58 +302,17 @@ namespace whale {
         }
     }
 
-    DataObjectProp::CompuMethod::CompuMethod(const pugi::xml_node& node)
+    String PhysicalType::encode(const String& value)
     {
-        m_category = node.child_value("CATEGORY");
-
-        if (m_category == "TEXTTABLE") {
-            for (const auto& ttcs : node.child("COMPU-INTERNAL-TO-PHYS").child("COMPU-SCALES").children()) {
-                m_textTableCompuScales.emplace_back(TextTableCompuScale(ttcs));
-            }
-
-            if (const auto& cdv = node.child("COMPU-INTERNAL-TO-PHYS").child("COMPU-DEFAULT-VALUE")) {
-                m_compuDefaultValue = CompuConst{ cdv.child_value("VT"), cdv.child("VT").attribute("TI").value() };
-            }
-        }
-
-        if (m_category == "LINEAR") {
-            for (const auto& lcs : node.child("COMPU-INTERNAL-TO-PHYS").child("COMPU-SCALES").children()) {
-                m_linearCompuScales.emplace_back(LinearCompuScale(lcs));
-            }
-
-            if (const auto& cdv = node.child("COMPU-INTERNAL-TO-PHYS").child("COMPU-DEFAULT-VALUE")) {
-                m_compuDefaultValue = cdv.child("VT").text().as_double();
-            }
-        }
+        return String();
     }
 
-
-    DataObjectProp::CompuMethod::TextTableCompuScale::TextTableCompuScale(const pugi::xml_node& node)
+    String PhysicalType::decode(const String& value)
     {
-        m_compuConst = CompuConst{ node.child("COMPU-CONST").child_value("VT"),
-                                   node.child("COMPU-CONST").child("VT").attribute("TI").value()
-        };
-        if (const auto& sl = node.child("SHORT-LABEL")) {
-            m_shortLabel = sl.value();
-        }
-        if (const auto& ll = node.child("LOWER-LIMIT")) {
-            m_lowerLimit = ll.text().as_uint();
-        }
-        if (const auto& ul = node.child("UPPER-LIMIT")) {
-            m_upperLimit = ul.text().as_uint();
-        }
+        return String();
     }
 
-    DataObjectProp::CompuMethod::LinearCompuScale::LinearCompuScale(const pugi::xml_node& node)
-    {
-        m_description = ""; //getDescriptionFromXml(node);
-        const auto& v = node.child("COMPU-RATIONAL-COEFFS").child("COMPU-NUMERATOR").child("V");
-        m_compuNumerators[0] = v.text().as_double();
-        m_compuNumerators[1] = v.next_sibling().text().as_double();
-        m_compuDenominator = node.child("COMPU-RATIONAL-COEFFS").child("COMPU-DENOMINATOR").child("V").text().as_double();
-    }
-
-    DataObjectProp::InternalConstr::InternalConstr(const pugi::xml_node& node)
+    InternalConstr::InternalConstr(const pugi::xml_node& node)
     {
         m_lowerLimit = node.child("LOWER-LIMIT").text().as_uint();
         m_upperLimit = node.child("UPPER-LIMIT").text().as_uint();
@@ -308,18 +320,18 @@ namespace whale {
         // m_lowerLimitType = node.child("LOWER-LIMIT").attribute("INTERVAL-TYPE").value();
         // m_lowerLimitType = node.child("LOWER-LIMIT").attribute("INTERVAL-TYPE").value();
 
-        for (auto& sc : node.child("SCALE-CONSTRS").children("SCALE-CONSTR")) {
-            m_scaleConstrs.emplace_back(ScaleConstr(sc));
-        }
+        //for (auto& sc : node.child("SCALE-CONSTRS").children("SCALE-CONSTR")) {
+        //    m_scaleConstrs.emplace_back(ScaleConstr(sc));
+        //}
     }
-    DataObjectProp::InternalConstr::ScaleConstr::ScaleConstr(const pugi::xml_node& node)
+    /*InternalConstr::ScaleConstr::ScaleConstr(const pugi::xml_node& node)
     {
         m_validity = node.attribute("VALIDITY").value();
         m_shortLabel = node.child_value("SHORT-LABEL");
         m_shortLabelTI = node.child("SHORT-LABEL").attribute("TI").value();
         m_lowerLimit = node.child("LOWER-LIMIT").text().as_uint();
         m_upperLimit = node.child("UPPER-LIMIT").text().as_uint();
-    }
+    }*/
     // ----- End: DataObjectProp -----
 
     // ----- Start: DTC -----
@@ -374,6 +386,16 @@ namespace whale {
         m_codedValue = node.child("CODED-VALUE").text().as_uint();
     }
 
+    String CodedConstParam::decode(const String& text)
+    {
+        return String();
+    }
+
+    String CodedConstParam::encode(const String& text)
+    {
+        return String();
+    }
+
     ParamWithDop::ParamWithDop(const pugi::xml_node& node, DiagLayerContainer* parentDlc)
         : Param(node)
     {
@@ -381,6 +403,12 @@ namespace whale {
             String id = getIdRefFromXml(dopRef);
             String doc = getDocRefFromXml(dopRef);
             m_dopRef = Reference{ id, doc };
+            if (doc.empty() || doc == parentDlc->id()) {
+                m_dop = parentDlc->getDataObjectPropById(id);
+            }
+            else {
+                m_dop = PDX::get().getDataObjectPropByDocAndId(doc, id);
+            }
         }
         if (const auto& dopSNRef = node.child("DOP-SNREF")) {
             m_dopSNRef = dopSNRef.attribute("SHORT-NAME").as_string();
@@ -401,16 +429,69 @@ namespace whale {
         }
     }
 
+    String ParamWithDop::decode(const String& text)
+    {
+        return String();
+    }
+
+    String ParamWithDop::encode(const String& text)
+    {
+        return String();
+    }
+
     ValueParam::ValueParam(const pugi::xml_node& node, DiagLayerContainer* parentDlc)
         : ParamWithDop(node, parentDlc)
     {
         m_physicalDefaultValue = node.child_value("PHYSICAL-DEFAULT-VALUE");
     }
 
+    String ValueParam::decode(const String& text)
+    {
+        return String();
+    }
+
+    String ValueParam::encode(const String& text)
+    {
+        return String();
+    }
+
     PhysConstParam::PhysConstParam(const pugi::xml_node& node, DiagLayerContainer* parentDlc)
         : ParamWithDop(node, parentDlc)
     {
         m_physConstantValue = node.child_value("PHYS-CONSTANT-VALUE");
+        auto value = m_dop->encode(m_physConstantValue);
+        if (value) {
+            m_constLowerLimit = value.value();
+        }
+        else {
+            WH_ERROR("Param {} failed to get its constant value from dop {}", m_shortName, m_dop->id());
+        }
+    }
+
+    String PhysConstParam::decode(const String& text)
+    {
+        /*String decoded;
+        if (!m_bytePosition.has_value()) {
+            return decoded;
+        }
+
+        auto dop = std::dynamic_pointer_cast<DataObjectProp>(m_dop);
+        if (m_semantic == "SUPPRESS-POS-RESPONSE") {
+            auto byte = text.substr(m_bytePosition.value() * 2, 2);
+            auto value = std::stoi(byte, 0, 16) & (1 < (7 - m_bitPosition));
+            return dop->m_compuMethod->decode(value);
+        }
+        auto value = text.substr(m_bytePosition.value() * 2);
+        return dop->m_compuMethod->decode(value);*/
+        if (std::stoi(text, 0, 16) == m_constLowerLimit) {
+            return m_physConstantValue;
+        }
+        return String();
+    }
+
+    String PhysConstParam::encode(const String& text)
+    {
+        return String();
     }
 
     ReservedParam::ReservedParam(const pugi::xml_node& node)
@@ -418,6 +499,16 @@ namespace whale {
     {
         m_bitLength = node.child("BIT-LENGTH").text().as_uint();
         m_diagCodedType = DiagCodedType(node.child("DIAG-CODED-TYPE"));
+    }
+
+    String ReservedParam::decode(const String& text)
+    {
+        return String();
+    }
+
+    String ReservedParam::encode(const String& text)
+    {
+        return String();
     }
 
     TableKeyParam::TableKeyParam(const pugi::xml_node& node)
@@ -442,6 +533,16 @@ namespace whale {
         }
     }
 
+    String TableKeyParam::decode(const String& text)
+    {
+        return String();
+    }
+
+    String TableKeyParam::encode(const String& text)
+    {
+        return String();
+    }
+
     TableStructParam::TableStructParam(const pugi::xml_node& node)
         : Param(node)
     {
@@ -461,6 +562,16 @@ namespace whale {
         }
     }
 
+    String TableStructParam::decode(const String& text)
+    {
+        return String();
+    }
+
+    String TableStructParam::encode(const String& text)
+    {
+        return String();
+    }
+
     MatchingRequestParam::MatchingRequestParam(const pugi::xml_node& node)
         : Param(node)
     {
@@ -468,10 +579,28 @@ namespace whale {
         m_byteLength = node.child("BYTE-LENGTH").text().as_uint();
     }
 
+    String MatchingRequestParam::decode(const String& text)
+    {
+        return String();
+    }
+
+    String MatchingRequestParam::encode(const String& text)
+    {
+        return String();
+    }
+
     LengthKeyParam::LengthKeyParam(const pugi::xml_node& node, DiagLayerContainer* parentDlc)
         : ParamWithDop(node, parentDlc)
     {
         m_id = getIdFromXml(node);
+    }
+    String LengthKeyParam::decode(const String& text)
+    {
+        return String();
+    }
+    String LengthKeyParam::encode(const String& text)
+    {
+        return String();
     }
     // ----- End: Param -----
 
@@ -506,6 +635,16 @@ namespace whale {
                 m_params.emplace_back(CreateRef<TableStructParam>(TableStructParam(param)));
             }
         }
+    }
+
+    String StructBase::decode(const String& text)
+    {
+        return String();
+    }
+
+    Option<unsigned> StructBase::encode(const String& text)
+    {
+        return Option<unsigned>();
     }
 
     // ----- Start: Structure -----
@@ -712,6 +851,49 @@ namespace whale {
     }
     // ----- End: FunctClass -----
 
+    bool DiagService::decode(Trace& trace)
+    {
+        //auto firstParam = CreateRef<CodedConstParam>;
+        auto sid = stoi(trace.hexTrace.substr(0, 2), 0, 16);
+        String decoded;
+        if (trace.type == MESSAGE_TYPE::SEND) {
+            if (sid == serviceId()) {
+                String result;
+                for (auto i = 1; i < m_request->m_params.size(); i++) {
+                    auto temp = m_request->m_params[1]->decode(trace.hexTrace);
+                    if (temp.empty()) {
+                        return false;
+                    }
+                    result += "\n\t" + temp;
+                }
+                decoded = m_request->m_longName + result;
+            }
+        }
+        else if (trace.type == MESSAGE_TYPE::RESPONSE) {
+            if (sid == serviceId() + 64) {
+                decoded = this->m_posResponse->m_shortName;
+            }
+        }
+
+        if (!decoded.empty()) {
+            trace.hexTrace = decoded;
+            return true;
+        }
+        else {
+            // WH_INFO("{}-{} does not match service", trace.hexTrace.substr(0, 2), this->m_shortName);
+            return false;
+        }
+    }
+
+    int DiagService::serviceId()
+    {
+        if (m_serviceId == -1) {
+            auto firstParam = std::dynamic_pointer_cast<CodedConstParam>(m_request->m_params[0]);
+            m_serviceId = firstParam->m_codedValue;
+        }
+        return m_serviceId;
+    }
+
     // ----- Start: DiagService -----
     DiagService::DiagService(const pugi::xml_node& node)
         : BasicInfo(node)
@@ -723,12 +905,27 @@ namespace whale {
             m_functClassRefs.emplace_back(Reference(fc));
         }*/
         m_requestRef = Reference(node.child("REQUEST-REF"));
-        m_posResponseRef = Reference(node.child("REQUEST-REF"));
-        m_negResponseRef = Reference(node.child("REQUEST-REF"));
+        m_posResponseRef = Reference(node.child("POS-RESPONSE-REFS").first_child());
+        m_negResponseRef = Reference(node.child("NEG-RESPONSE-REFS").first_child());
     }
-    std::optional<std::string> DiagService::decode(const std::string& message)
+    void DiagService::dereference(DiagLayerContainer* dlc)
     {
-        return std::optional<std::string>();
+        // When the referenced doc is it self, directly use it,
+        // or it result in infinite loop
+
+        if (m_requestRef.docRef.empty() || m_requestRef.docRef == dlc->id()) {
+            m_request = dlc->m_requests[m_requestRef.idRef];
+        }
+        else {
+            m_request = PDX::get().getDlcById(m_requestRef.docRef)->getRequestById(m_requestRef.idRef);
+        }
+
+        if (m_posResponseRef.docRef.empty()) {
+            m_posResponse = dlc->m_posResponses[m_posResponseRef.idRef];
+        }
+        else {
+            m_posResponse = PDX::get().getDlcById(m_posResponseRef.docRef)->m_posResponses[m_posResponseRef.idRef];
+        }
     }
     // ----- End: Class DiagService -----
 
@@ -822,7 +1019,7 @@ namespace whale {
     // ---- Start: DiagLayerContainer -----
     DiagLayerContainer::DiagLayerContainer(const String& dlcName)
     {
-        WH_INFO("Initializing DLC [{}]", dlcName);
+        // WH_INFO("Initializing DLC [{}]", dlcName);
         pugi::xml_document doc;
         auto fileName = PDX::get().getDlcFileNameById(dlcName);
         pugi::xml_parse_result result = doc.load_file(fileName.c_str());
@@ -945,38 +1142,6 @@ namespace whale {
             this->m_funcClasses[id] = CreateRef<FunctClass>(FunctClass(fc));
         }*/
 
-        // ----- DiagComms -----
-        for (auto& diagComm : node.child("DIAG-COMMS").children()) {
-            if (!strcmp(diagComm.name(), "DIAG-SERVICE")) {
-                String id = getIdFromXml(diagComm);
-                String shortName = getShortNameFromXml(diagComm);
-                auto dct = DiagCommType::DiagService;
-                m_diagComms[id] = DiagComm{
-                    shortName,
-                    dct,
-                    CreateRef<DiagService>(DiagService(diagComm)),
-                    nullptr
-                };
-            }
-            else if (!strcmp(diagComm.name(), "SINGLE-ECU-JOB")) {
-                String id = getIdFromXml(diagComm);
-                String shortName = getShortNameFromXml(diagComm);
-                auto dct = DiagCommType::SingleEcuJob;
-                m_diagComms[id] = DiagComm{
-                    shortName,
-                    dct,
-                    nullptr,
-                    CreateRef<SingleEcuJob>(SingleEcuJob(diagComm)),
-                };
-            }
-            else if (!strcmp(diagComm.name(), "DIAG-COMM-REF")) {
-                auto id = getIdRefFromXml(diagComm);
-                auto doc = getDocRefFromXml(diagComm);
-
-                m_diagComms[id] = PDX::get().getDiagCommByDocAndId(doc, id);
-            }
-        }
-
         // Requests
         for (auto& request : node.child("REQUESTS").children("REQUEST")) {
             String id = getIdFromXml(request);
@@ -998,6 +1163,63 @@ namespace whale {
             String id = getIdFromXml(gnr);
             m_globalNegResponses[id] = CreateRef<Response>(Response(gnr, this));
         }
+
+        // ----- DiagComms -----
+        /*
+        for (auto& diagComm : node.child("DIAG-COMMS").children()) {
+            if (!strcmp(diagComm.name(), "DIAG-SERVICE")) {
+                String id = getIdFromXml(diagComm);
+                String shortName = getShortNameFromXml(diagComm);
+                auto dct = DiagCommType::DiagService;
+                auto ds = CreateRef<DiagService>(DiagService(diagComm));
+                ds->dereference(this);
+                m_diagComms[id] = DiagComm{
+                    shortName,
+                    dct,
+                    ds,
+                    nullptr
+                };
+            }
+            else if (!strcmp(diagComm.name(), "SINGLE-ECU-JOB")) {
+                String id = getIdFromXml(diagComm);
+                String shortName = getShortNameFromXml(diagComm);
+                auto dct = DiagCommType::SingleEcuJob;
+                m_diagComms[id] = DiagComm{
+                    shortName,
+                    dct,
+                    nullptr,
+                    CreateRef<SingleEcuJob>(SingleEcuJob(diagComm)),
+                };
+            }
+            else if (!strcmp(diagComm.name(), "DIAG-COMM-REF")) {
+                auto id = getIdRefFromXml(diagComm);
+                auto doc = getDocRefFromXml(diagComm);
+
+                m_diagComms[id] = PDX::get().getDiagCommByDocAndId(doc, id);
+            }
+        }
+        */
+
+        // diag services
+        for (auto& diagComm : node.child("DIAG-COMMS").children()) {
+            if (!strcmp(diagComm.name(), "DIAG-SERVICE")) {
+                String id = getIdFromXml(diagComm);
+                String shortName = getShortNameFromXml(diagComm);
+                // auto dct = DiagCommType::DiagService;
+                auto ds = CreateRef<DiagService>(DiagService(diagComm));
+                ds->dereference(this);
+                m_diagServices[id] = ds;
+            }
+            else if (!strcmp(diagComm.name(), "DIAG-COMM-REF")) {
+                auto id = getIdRefFromXml(diagComm);
+                auto doc = getDocRefFromXml(diagComm);
+
+                if (id.starts_with("DiagnServi")) {
+                    m_diagServices[id] = PDX::get().getDiagServiceByDocAndId(doc, id);
+                }
+            }
+        }
+
 
         // ComParam Refs
         /*for (auto& cpr : node.child("COMPARAM-REFS").children("COMPARAM-REF")) {
@@ -1052,8 +1274,49 @@ namespace whale {
             /*if (m_containerType == "ECU-VARIANT") {
                 m_parentRefs.begin()->second.parentDlc->m_subEcuVariants.push_back(m_id);
             }*/
+            // WH_ERROR("Finished creating dlc: [{}]", dlcName);
     }
 
+
+    void DiagLayerContainer::decode(Trace& trace)
+    {
+        for (auto& [_, ds] : m_diagServices) {
+            if (ds->decode(trace)) {
+                break;
+            }
+        }
+    }
+
+    void DiagLayerContainer::decodeEcuTrace(EcuTrace& ecuTrace)
+    {
+        inheritDiagServices();
+        for (auto& trace : ecuTrace.traces) {
+            this->decode(trace);
+        }
+    }
+
+    void DiagLayerContainer::inheritDiagServices()
+    {
+        if (!m_parentLoaded) {
+            auto allParentRefs = this->getAllParentRefs();
+            std::sort(allParentRefs.begin(), allParentRefs.end());
+
+            for (auto& parentRef : allParentRefs) {
+                //WH_INFO("Current parent: {}", parentRef.idRef);
+                const auto& parentDiagServices = PDX::get().getDlcById(parentRef.idRef)->m_diagServices;
+                if (parentDiagServices.size() > 0) {
+                    for (auto& [id, ds] : parentDiagServices) {
+                        auto shortName = ds->m_shortName;
+                        if (!parentRef.notInheritedDiagComms.count(shortName) && !m_diagServices.count(id)) {
+                            m_diagServices[id] = ds;
+                        }
+                    }
+                }
+            }
+
+            m_parentLoaded = true;
+        }
+    }
 
     Ref<FunctClass> DiagLayerContainer::getFunctClassById(const String& id) const
     {
@@ -1154,6 +1417,16 @@ namespace whale {
         }
     }
 
+    Ref<DiagService> DiagLayerContainer::getDiagServiceById(const String& id) const
+    {
+        if (m_diagServices.count(id)) {
+            return m_diagServices.at(id);
+        }
+        else {
+            WH_ERROR("DiagService [" + id + "] not found in dlc [" + m_id + "].");
+        }
+    }
+
     Ref<PhysicalDimension> DiagLayerContainer::getPhysicalDimensionById(const String& id) const
     {
         if (m_physicalDimensions.count(id)) {
@@ -1184,25 +1457,32 @@ namespace whale {
         std::sort(allParentRefs.begin(), allParentRefs.end());
 
         for (auto& parentRef : allParentRefs) {
-            WH_INFO("Current parent: {}", parentRef.idRef);
+            //WH_INFO("Current parent: {}", parentRef.idRef);
             auto parentDiagComms = PDX::get().getDlcById(parentRef.idRef)->getAllDiagComms();
             if (parentDiagComms.size() > 0) {
                 for (auto& [id, value] : parentDiagComms) {
                     auto shortName = value.shortName;
                     if (parentRef.notInheritedDiagComms.count(shortName)) {
-                        std::cout << "\tDiagComm [" << id << "] is not inherited." << std::endl;
+                        //std::cout << "\tDiagComm [" << id << "] is not inherited." << std::endl;
                     }
                     else {
                         if (m_diagComms.count(id)) {
-                            std::cout << "\tDiagComm [" << id << "] exist, ignored!" << std::endl;
+                            //std::cout << "\tDiagComm [" << id << "] exist, ignored!" << std::endl;
                         }
                         else {
-                            std::cout << "\tDiagComm [" << id << "] inherited from [" + parentRef.docRef + "]" << std::endl;
+                            //std::cout << "\tDiagComm [" << id << "] inherited from [" + parentRef.docRef + "]" << std::endl;
                             m_diagComms[id] = value;
                         }
                     }
                 }
             }
+        }
+    }
+
+    void DiagLayerContainer::dereference()
+    {
+        for (auto& [_, ds] : m_diagServices) {
+            ds->dereference(this);
         }
     }
 
@@ -1212,13 +1492,14 @@ namespace whale {
         Vec<Ref<DiagService>> allServices;
         for (auto [id, diagComm] : allDiagComms) {
             if (diagComm.type == DiagCommType::DiagService) {
+
                 allServices.push_back(diagComm.diagService);
             }
         }
         return allServices;
     }
 
-    Vec<ParentRef> DiagLayerContainer::getAllParentRefs() {
+    Vec<ParentRef> DiagLayerContainer::getAllParentRefs() const {
 
         Vec<ParentRef> allParentRefs;
         for (auto parentRef : m_parentRefs) {
@@ -1419,6 +1700,7 @@ namespace whale {
         }
 
         // auto bcm = getEvByShortName("EV_BCM37w_006");
+        // auto eps = getEvByShortName("EV_SteerAssisBASGEN1MQB37_007");
 
 
         /*for (auto& [id, fileName] : m_dlcFiles) {
@@ -1541,8 +1823,17 @@ namespace whale {
 
     Ref<DiagLayerContainer> PDX::addDlcById(const String& id)
     {
+        if (m_dlcMap.count(id)) {
+            WH_INFO("DLC [{}] exists.");
+            return m_dlcMap.at(id);
+        }
+
+        // WH_INFO("DLC {} in file map? {}", id, m_dlcFiles.count(id));
         if (m_dlcFiles.count(id)) {
-            m_dlcMap[id] = CreateRef<DiagLayerContainer>(DiagLayerContainer(id));
+            auto dlc = CreateRef<DiagLayerContainer>(DiagLayerContainer(id));
+            //dlc->dereference();
+            m_dlcMap[id] = dlc;
+            WH_INFO("PDX added DLC        [{}]", id);
         }
         return m_dlcMap[id];
     }
@@ -1577,6 +1868,10 @@ namespace whale {
 
     DiagComm PDX::getDiagCommByDocAndId(const String& doc, const String& id) {
         return this->m_dlcMap[doc]->getDiagCommById(id);
+    }
+
+    Ref<DiagService> PDX::getDiagServiceByDocAndId(const String& doc, const String& id) {
+        return this->m_dlcMap[doc]->getDiagServiceById(id);
     }
 
     // ----- END: Class PDX -----
@@ -1678,9 +1973,142 @@ namespace whale {
         return m_vehicleInfoMap[id]->getBvShortNames();
     }
 
+    void PDX::decodeEcuTrace(EcuTrace& ecuTrace)
+    {
+        String evName, evVersion;
+        for (auto& trace : ecuTrace.traces) {
+            String hexString = trace.hexTrace;
+            if (hexString.size() > 6 && hexString.substr(0, 6) == "62f19e") {
+                auto response = trace.hexTrace.substr(6);
+                evName = whale::hexToString(response);
+                if (evName.back() == '\0') {
+                    evName.pop_back();
+                }
+            }
+            if (!evName.empty() && hexString.substr(0, 6) == "62f1a2") {
+                auto response = trace.hexTrace.substr(6);
+                evVersion = whale::hexToString(response);
+                break;
+            }
+        }
+
+        if (!evName.empty()) {
+            auto ev = PDX::get().getDlcById(evName + "_" + evVersion.substr(0, 3));
+
+            if (ev != nullptr) {
+                WH_INFO("Get EV: {}", ev->id());
+
+                ev->decodeEcuTrace(ecuTrace);
+            }
+        }
+    }
+
     Vec<String> PDX::getEvShortNamesByBvId(const String& id) {
         WH_INFO("request bv: {}", id);
         return m_bvMapSubEvs[id];
+    }
+
+    LinearComputeMethod::LinearComputeMethod(const pugi::xml_node& node)
+    {
+        // node->COMPU-INTERNAL-TO-PHYS->COMPU-SCALES->COMPU-SCALE
+        const auto& linear_node = node.child("COMPU-INTERNAL-TO-PHYS").child("COMPU-SCALES").first_child();
+        m_description = getDescriptionFromXml(linear_node);
+
+        const auto& v = linear_node.child("COMPU-RATIONAL-COEFFS").child("COMPU-NUMERATOR").child("V");
+        m_compuNumerators[0] = v.text().as_double();
+        m_compuNumerators[1] = v.next_sibling().text().as_double();
+        m_compuDenominator = linear_node.child("COMPU-RATIONAL-COEFFS").child("COMPU-DENOMINATOR").child("V").text().as_double();
+    }
+
+    Option<unsigned> LinearComputeMethod::encode(const String& value)
+    {
+        return std::nullopt;
+    }
+
+    String LinearComputeMethod::decode(const String& value)
+    {
+        return String();
+    }
+
+    String LinearComputeMethod::decode(unsigned value)
+    {
+        return String();
+    }
+
+    TextTableComputeMethod::TextTableComputeMethod(const pugi::xml_node& node)
+    {
+        const auto& tt_node = node.child("COMPU-INTERNAL-TO-PHYS").child("COMPU-SCALES");
+        for (const auto& ttcs : tt_node.children()) {
+            auto tt = TextTableCompuScale(ttcs);
+            m_textTableCompuScales[tt.m_lowerLimit] = TextTableCompuScale(ttcs);
+        }
+    }
+
+    String TextTableComputeMethod::decode(const String& value)
+    {
+        auto key = std::stoi(value, 0, 16);
+        if (m_textTableCompuScales.count(key)) {
+            return m_textTableCompuScales[key].m_vt;
+        }
+        return String();
+    }
+
+    String TextTableComputeMethod::decode(unsigned value)
+    {
+        if (m_textTableCompuScales.count(value)) {
+            return m_textTableCompuScales[value].m_vt;
+        }
+        return String();
+    }
+
+    Option<unsigned> TextTableComputeMethod::encode(const String& value)
+    {
+        for (auto& [lowerLimit, cs] : m_textTableCompuScales) {
+            if (cs.m_vt == value) {
+                return cs.m_lowerLimit;
+            }
+        }
+        return std::nullopt;
+    }
+
+    TextTableCompuScale::TextTableCompuScale(const pugi::xml_node& node)
+        : m_vt(node.child("COMPU-CONST").child_value("VT")),
+        m_ti(node.child("COMPU-CONST").child("VT").attribute("TI").value())
+    {
+        if (const auto& sl = node.child("SHORT-LABEL")) {
+            String shortLable = sl.value();
+            if (shortLable.starts_with("$")) {
+                shortLable = shortLable.substr(1);
+            }
+            else if (shortLable.starts_with("0x")) {
+                shortLable = shortLable.substr(2);
+            }
+            for (auto c : shortLable) {
+                toupper(c);
+            }
+            m_shortLabel = shortLable;
+        }
+        if (const auto& ll = node.child("LOWER-LIMIT")) {
+            m_lowerLimit = ll.text().as_uint();
+        }
+        if (const auto& ul = node.child("UPPER-LIMIT")) {
+            m_upperLimit = ul.text().as_uint();
+        }
+    }
+
+    Option<unsigned> IdenticalComputeMethod::encode(const String& value)
+    {
+        return std::nullopt;
+    }
+
+    String IdenticalComputeMethod::decode(const String& value)
+    {
+        return String();
+    }
+
+    String IdenticalComputeMethod::decode(unsigned value)
+    {
+        return String();
     }
 
 }
