@@ -163,7 +163,23 @@ namespace whale {
             m_xsiType = DCType::StandardLength;
         }
 
-        m_baseDataType = node.attribute("BASE-DATA-TYPE").value();
+        auto bdt = node.attribute("BASE-DATA-TYPE").value();
+
+        if (bdt == "A_INT32") {
+            m_baseDataType = BaseTypeEncoding::A_INT32;
+        }
+        else if (bdt == "A_UINT32") {
+            m_baseDataType = BaseTypeEncoding::A_UINT32;
+        }
+        else if (bdt == "A_BYTEFIELD") {
+            m_baseDataType = BaseTypeEncoding::A_BYTEFIELD;
+        }
+        else if (bdt == "A_ASCIISTRING") {
+            m_baseDataType = BaseTypeEncoding::A_ASCIISTRING;
+        }
+        else if (bdt == "A_UNICODE2STRING") {
+            m_baseDataType = BaseTypeEncoding::A_UNICODE2STRING;
+        }
 
         if (const auto& temp = node.attribute("BASE-TYPE-ENCODING")) {
             m_baseTypeEncoding = temp.value();
@@ -197,18 +213,20 @@ namespace whale {
     {
         return String();
     }
-    Option<unsigned> DiagCodedType::coded_value(const String& value)
+    Option<unsigned> DiagCodedType::diag_code(const String& str)
     {
-        unsigned bit_mask;
+        String data{};
+        unsigned value;
+
         switch (m_xsiType) {
         case DCType::StandardLength:
-            String data = value.substr(0, m_bitLength.value() / 8 + 1);
-            unsigned data_dec = stoi(data, 0, 16);
+            data = str.substr(0, std::ceil((float)(m_bitLength.value()) / 8));
+            value = stoi(data, 0, 16);
             if (m_bitMask) {
-                bit_mask = stoi(m_bitMask.value(), 0, 16);
-                return data_dec & bit_mask;
+                unsigned bit_mask = stoi(m_bitMask.value(), 0, 16);
+                value &= bit_mask;
             }
-            return data_dec;
+            return value;
         }
 
         return std::nullopt;
@@ -245,7 +263,7 @@ namespace whale {
 
     Option<unsigned> DataObjectProp::coded_value(const String& str)
     {
-        return m_diagCodedType.coded_value(str);        
+        return m_diagCodedType.diag_code(str);        
     }
 
     void DataObjectProp::dereference(const Map<String, Ref<Unit>>& unitMap)
@@ -271,18 +289,13 @@ namespace whale {
         return m_compuMethod->encode(value);
     }
 
-    String DataObjectProp::decode(const String& value)
+    String DataObjectProp::decode(const String& str)
     {
-        String data{};
-        unsigned long bit_mask;
-        switch (m_diagCodedType.m_xsiType) {
-        case DCType::StandardLength:
-            data = value.substr(0, m_diagCodedType.m_bitLength.value() / 8 + 1);
-            if (m_diagCodedType.m_bitMask) {
-                bit_mask = stoi(m_diagCodedType.m_bitMask.value(), 0, 16);
-            }
+        auto diag_code_value = m_diagCodedType.diag_code(str);
+        
+        if (diag_code_value) {
+            return m_compuMethod->decode(diag_code_value.value());
         }
-        return String();
     }
 
     PhysicalType::PhysicalType(const pugi::xml_node& node)
@@ -388,6 +401,10 @@ namespace whale {
 
     String CodedConstParam::decode(const String& text)
     {
+        auto value = m_diagCodedType.diag_code(text);
+        if (value == m_codedValue) {
+            return String{ "CodedValue" };
+        }
         return String();
     }
 
@@ -402,16 +419,29 @@ namespace whale {
         if (const auto& dopRef = node.child("DOP-REF")) {
             String id = getIdRefFromXml(dopRef);
             String doc = getDocRefFromXml(dopRef);
+
             m_dopRef = Reference{ id, doc };
             if (doc.empty() || doc == parentDlc->id()) {
                 m_dop = parentDlc->getDataObjectPropById(id);
             }
             else {
-                m_dop = PDX::get().getDataObjectPropByDocAndId(doc, id);
+                m_dop = PDX::get().getDopByDocAndId(doc, id);
+                if (!m_dop) {
+                    WH_ERROR("Failed to get dop {} from DOP ref", m_dopSNRef.value());
+                }
             }
         }
         if (const auto& dopSNRef = node.child("DOP-SNREF")) {
             m_dopSNRef = dopSNRef.attribute("SHORT-NAME").as_string();
+            {
+                if (m_dopSNRef == "MUX_DTCExtenDataRecor") {
+                    WH_INFO("We are here");
+                }
+            }
+            m_dop = parentDlc->getDopById(m_dopSNRef.value());
+            if (!m_dop) {
+                WH_ERROR("Failed to get dop {} from SNRef", m_dopSNRef.value());
+            }
         }
     }
 
@@ -447,7 +477,8 @@ namespace whale {
 
     String ValueParam::decode(const String& text)
     {
-        return String();
+        // bit_position is optional, but lets first figure out the method
+        return m_dop->decode(text.substr(m_bytePosition.value()*2));
     }
 
     String ValueParam::encode(const String& text)
@@ -696,7 +727,7 @@ namespace whale {
         const Map<String, Ref<Structure>>& structMap,
         const Map<String, Ref<DataObjectProp>>& dopMap
     )
-        : BasicInfo(node)
+        : DopBase(node)
     {
         m_isVisible = node.attribute("IS-VISIBLE").as_bool();;
         m_offset = node.child("OFFSET").text().as_uint();
@@ -715,6 +746,16 @@ namespace whale {
         }
 
         m_determinNumberOfItems = DeterminNumberOfItems(node.child("DETERMINE-NUMBER-OF-ITEMS"), dopMap);
+    }
+
+    String DynamicLengthField::decode(const String& text)
+    {
+        return String();
+    }
+
+    Option<unsigned> DynamicLengthField::encode(const String& text)
+    {
+        return std::nullopt;
     }
 
     DynamicLengthField::DeterminNumberOfItems::DeterminNumberOfItems(
@@ -744,7 +785,7 @@ namespace whale {
 
     // ----- Start: EndOfPduField -----
     EndOfPduField::EndOfPduField(const pugi::xml_node& node, const Map<String, Ref<Structure>>& structMap)
-        : BasicInfo(node)
+        : DopBase(node)
     {
         auto id = getIdRefFromXml(node.child("BASIC-STRUCTURE-REF"));
         if (structMap.count(id)) {
@@ -761,6 +802,14 @@ namespace whale {
         m_minItems = node.child("MIN-NUMBER-OF-ITEMS").text().as_uint();
 
         m_isVisible = node.attribute("IS-VISIBLE").as_bool();
+    }
+    Option<unsigned> EndOfPduField::encode(const String& value)
+    {
+        return Option<unsigned>();
+    }
+    String EndOfPduField::decode(const String& value)
+    {
+        return String();
     }
     // ----- End: EndOfPduField -----
 
@@ -779,7 +828,7 @@ namespace whale {
         m_upperLimit = node.child("UPPER-LIMIT").text().as_uint();
     }
 
-    Mux::Mux(const pugi::xml_node& node) : BasicInfo(node)
+    Mux::Mux(const pugi::xml_node& node) : DopBase(node)
     {
         m_isVisible = node.attribute("IS-VISIBLE").as_bool();
         m_bytePosition = node.child("BYTE-POSITION").text().as_uint();
@@ -789,6 +838,14 @@ namespace whale {
         for (pugi::xml_node _case : node.child("CASES").children()) {
             m_cases.push_back(MuxCase(_case));
         }
+    }
+    Option<unsigned> Mux::encode(const String& value)
+    {
+        return Option<unsigned>();
+    }
+    String Mux::decode(const String& value)
+    {
+        return String();
     }
     // ----- End: Mux -----
 
@@ -1342,13 +1399,16 @@ namespace whale {
             return getDtcDopById(id);
         }
         else if (dopType == "MUX") {
-            //return getMuxByid(id);
+            return getMuxById(id);
         }
         else if (dopType == "STR") {
-            //return getStructureById(id);
+            return getStructureById(id);
         }
         else if (dopType == "EOP") {
-            //return getEndOfPduFieldById(id);
+            return getEndOfPduFieldById(id);
+        }
+        else if (dopType == "DYN") {
+            return getDynamicLengthFieldById(id);
         }
         return nullptr;
     }
@@ -1373,6 +1433,30 @@ namespace whale {
     {
         if (m_structures.count(id)) {
             return m_structures.at(id);
+        }
+        return nullptr;
+    }
+
+    Ref<EndOfPduField> DiagLayerContainer::getEndOfPduFieldById(const String& id) const
+    {
+        if (m_endOfPduFields.count(id)) {
+            return m_endOfPduFields.at(id);
+        }
+        return nullptr;
+    }
+
+    Ref<Mux> DiagLayerContainer::getMuxById(const String& id) const
+    {
+        if (m_muxes.count(id)) {
+            return m_muxes.at(id);
+        }
+        return nullptr;
+    }
+
+    Ref<DynamicLengthField> DiagLayerContainer::getDynamicLengthFieldById(const String& id) const
+    {
+        if (m_dynamicLengthFields.count(id)) {
+            return m_dynamicLengthFields.at(id);
         }
         return nullptr;
     }
@@ -2032,7 +2116,11 @@ namespace whale {
 
     String LinearComputeMethod::decode(unsigned value)
     {
-        return String();
+        // !!!!! to fix 
+        auto result = value * m_compuNumerators[0] + m_compuDenominator * m_compuNumerators[1];
+        std::stringstream ss;
+        ss << result;
+        return ss.str();
     }
 
     TextTableComputeMethod::TextTableComputeMethod(const pugi::xml_node& node)
@@ -2108,7 +2196,9 @@ namespace whale {
 
     String IdenticalComputeMethod::decode(unsigned value)
     {
-        return String();
+        std::stringstream ss;
+        ss << value;
+        return ss.str();
     }
 
 }

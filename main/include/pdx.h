@@ -98,7 +98,7 @@ namespace whale {
 
     struct DiagCodedType {
         DCType                  m_xsiType;
-        String                  m_baseDataType;
+        BaseTypeEncoding        m_baseDataType;
 
         std::optional<String>   m_baseTypeEncoding;
         std::optional<bool>     m_isHighLowByteOrder;
@@ -113,7 +113,7 @@ namespace whale {
         DiagCodedType() = default;
         DiagCodedType(const pugi::xml_node&);
         String encode(unsigned input);
-        Option<unsigned> coded_value(const String& value);
+        Option<unsigned> diag_code(const String& value);
         
     };
 
@@ -450,7 +450,7 @@ namespace whale {
         StaticField(const pugi::xml_node& node, const Map<String, Ref<Structure>>& structMap);
     };
 
-    struct DynamicLengthField : public BasicInfo {
+    struct DynamicLengthField : public DopBase {
         struct DeterminNumberOfItems {
             unsigned m_bytePosition = 0;
             unsigned m_bitPosition = 0;
@@ -473,10 +473,12 @@ namespace whale {
         DynamicLengthField() = default;
         DynamicLengthField(const pugi::xml_node&, const Map<String, Ref<Structure>>&, const Map<String, Ref<DataObjectProp>>&);
         void dereference(const Map<String, Ref<Structure>>&, const Map<String, Ref<DataObjectProp>>&);
+        String decode(const String& text) override;
+        Option<unsigned> encode(const String& text) override;
     };
 
 
-    struct EndOfPduField : public BasicInfo {
+    struct EndOfPduField : public DopBase {
         Ref<Structure> m_basicStruct;
         unsigned m_maxItems;
         unsigned m_minItems;
@@ -484,9 +486,11 @@ namespace whale {
     public:
         EndOfPduField() = default;
         EndOfPduField(const pugi::xml_node&, const Map<String, Ref<Structure>>&);
+        Option<unsigned> encode(const String& value) override;
+        String decode(const String& value) override;
     };
 
-    struct Mux : public BasicInfo {
+    struct Mux : public DopBase {
         struct SwitchKey {
             unsigned m_bytePosition = 0;
             unsigned m_bitPosition = 0;
@@ -515,6 +519,9 @@ namespace whale {
 
         Mux() = default;
         Mux(const pugi::xml_node&);
+
+        Option<unsigned> encode(const String& value) override;
+        String decode(const String& value) override;
     };
 
 
@@ -680,6 +687,9 @@ namespace whale {
         Ref<DtcDop>				getDtcDopById(const String& id) const;
         Ref<DopBase>			getDopById(const String& id) const;
         Ref<Structure>			getStructureById(const String& id) const;
+        Ref<EndOfPduField>		getEndOfPduFieldById(const String& id) const;
+        Ref<Mux>			    getMuxById(const String& id) const;
+        Ref<DynamicLengthField>	getDynamicLengthFieldById(const String& id) const;
         Ref<Table>				getTableById(const String& id) const;
         Ref<Unit>				getUnitById(const String& id) const;
         Ref<DTC>				getDtcById(const String& id) const;
