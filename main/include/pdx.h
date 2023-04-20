@@ -6,6 +6,7 @@
 #include <set>
 #include <optional>
 #include <map>
+#include <memory>
 
 #include "type.h"
 
@@ -40,6 +41,13 @@ namespace whale {
         BasicInfo(const pugi::xml_node& node);
         String id() const;
         String shortName() const;
+    };
+
+    struct Ident {
+        String id;
+        String shortName;
+        String longName;
+        // String m_description;
     };
 
     struct Reference {
@@ -77,7 +85,7 @@ namespace whale {
         Ref<PhysicalDimension> m_physicalDimension;
 
         Unit() = default;
-        Unit(const pugi::xml_node&, const Map<String, Ref<PhysicalDimension>>& physDimensionMap);
+        Unit(const pugi::xml_node&, Map<String, Ref<PhysicalDimension>>&);
     };
 
     enum class DCType {
@@ -100,31 +108,40 @@ namespace whale {
         DCType                  m_xsiType;
         BaseTypeEncoding        m_baseDataType;
 
-        std::optional<String>   m_baseTypeEncoding;
-        std::optional<bool>     m_isHighLowByteOrder;
-        std::optional<String>   m_termination;
-
-        std::optional<unsigned> m_bitLength;
-        std::optional<String>   m_bitMask; // store a hex value in string
-        std::optional<unsigned> m_maxLength;
-        std::optional<unsigned> m_minLength;
-        std::optional<String>   m_lengthKeyRef;
+        Option<String>   m_baseTypeEncoding;
+        Option<bool>     m_isHighLowByteOrder;
+        Option<String>   m_termination;
+        
+        Option<unsigned> m_bitLength;
+        Option<String>   m_bitMask; // store a hex value in string
+        Option<unsigned> m_maxLength;
+        Option<unsigned> m_minLength;
+        Option<String>   m_lengthKeyRef;
 
         DiagCodedType() = default;
         DiagCodedType(const pugi::xml_node&);
         String encode(unsigned input);
-        Option<unsigned> diag_code(const String& value);
+        Option<unsigned> diag_code(const String&, Option<unsigned>, Option<unsigned>);
         
     };
 
+    struct DiagLayerContainer;
+
     struct DopBase : public BasicInfo {
         bool m_isVisible;
+        Ref<DiagLayerContainer> m_parent;
 
-
-        DopBase(const pugi::xml_node&);
+        DopBase(const pugi::xml_node&, Ref<DiagLayerContainer>);
         //virtual unsigned lowerLimit(const String& physicalValue) {};
         virtual Option<unsigned> encode(const String&) = 0;
-        virtual String decode(const String&) = 0;
+        virtual Option<String> decode(const String& str, Option<unsigned> byte_position = std::nullopt, Option<unsigned> bit_position = std::nullopt) = 0;
+    };
+
+    struct EnvDataDesc : public DopBase {
+        EnvDataDesc() = default;
+        EnvDataDesc(const pugi::xml_node& node, Ref<DiagLayerContainer>);
+        Option<unsigned> encode(const String&);
+        Option<String> decode(const String& str, Option<unsigned> byte_position = std::nullopt, Option<unsigned> bit_position = std::nullopt);
     };
 
     struct TextTableCompuScale {
@@ -175,14 +192,14 @@ namespace whale {
 
         //ComputeMethod(const pugi::xml_node&);
         virtual String decode(const String& value) = 0;
-        virtual String decode(unsigned value) = 0;
+        virtual Option<String> decode(unsigned value) = 0;
         virtual Option<unsigned> encode(const String& value) = 0;
     };
 
     struct IdenticalComputeMethod : public ComputeMethod {
         Option<unsigned> encode(const String& value) override;
         String decode(const String& value) override;
-        String decode(unsigned value);
+        Option<String> decode(unsigned value) override;
         IdenticalComputeMethod() {};
     };
 
@@ -194,7 +211,7 @@ namespace whale {
         LinearComputeMethod(const pugi::xml_node&);
         Option<unsigned> encode(const String& value) override;
         String decode(const String& value) override;
-        String decode(unsigned value);
+        Option<String> decode(unsigned value) override;
     };
 
     struct TextTableComputeMethod : public ComputeMethod {
@@ -203,7 +220,7 @@ namespace whale {
         TextTableComputeMethod(const pugi::xml_node&);
         Option<unsigned> encode(const String& value) override;
         String decode(const String& value) override;
-        String decode(unsigned value);
+        Option<String> decode(unsigned value) override;
     };
 
     struct PhysicalType {
@@ -258,17 +275,24 @@ namespace whale {
         DiagCodedType m_diagCodedType;
         PhysicalType m_physicalType;
         InternalConstr m_internalConstr;
-
-        std::optional<Reference> m_unitRef;
-
         Ref<Unit> m_unit;
 
         DataObjectProp() = default;
-        DataObjectProp(const pugi::xml_node& node);
-        Option<unsigned> coded_value(const String& str);
-        void dereference(const Map<String, Ref<Unit>>& unitMap);
+        DataObjectProp(const pugi::xml_node& node, Ref<DiagLayerContainer> = nullptr);
+        void dereference();
         Option<unsigned> encode(const String& value) override;
-        String decode(const String& value) override;
+        Option<String> decode(const String&, Option<unsigned> byte_position = std::nullopt, Option<unsigned> bit_position = std::nullopt) override;
+
+        // compute the internal value between physical and hex, for example:
+        // Hex       Physical
+        // F19E <====> Read ASAM ODX
+        //      61854
+        //      internal
+        Option<unsigned> intern_value_from_hex(const String&, Option<unsigned>, Option<unsigned>);
+        Option<unsigned> intern_value_from_physical(const String&);
+
+    private:
+        Option<Reference> m_unitRef;
     };
 
     struct DTC : public BasicInfo {
@@ -287,7 +311,7 @@ namespace whale {
         Map<String, Ref<DTC>> m_dtcs;
 
         DtcDop() = delete;
-        DtcDop(const pugi::xml_node&);
+        DtcDop(const pugi::xml_node&, Ref<DiagLayerContainer>);
     };
 
     struct Param {
@@ -296,26 +320,27 @@ namespace whale {
         String m_description;
 
         String m_type;
-        std::optional<String> m_semantic;
-        std::optional<unsigned> m_bytePosition;
-        unsigned m_bitPosition = 0;
+        Option<String> m_semantic;
+        Option<unsigned> m_bytePosition;
+        Option<unsigned> m_bitPosition;
 
         Param(const pugi::xml_node&);
-        virtual String decode(const String& text) = 0;
-        virtual String encode(const String& text) = 0;
+        virtual Option<String> decode(const String& text) = 0;
+        virtual Option<unsigned> encode(const String& text) = 0;
+        virtual void dereference(Ref<DiagLayerContainer> parent) = 0;
     };
 
-    struct DiagLayerContainer;
     struct ParamWithDop : public Param {
-        std::optional<Reference> m_dopRef = std::nullopt;
-        std::optional<DopSNRef> m_dopSNRef = std::nullopt;
+        Option<Reference> m_dopRef = std::nullopt;
+        Option<DopSNRef> m_dopSNRef = std::nullopt;
         Ref<DopBase> m_dop = nullptr;
+        ParamWithDop(const pugi::xml_node& node);
+        void dereference(Ref<DiagLayerContainer> parent) override;
+        Option<String> decode(const String& text) override;
+        Option<unsigned> encode(const String& text) override;
 
-        ParamWithDop(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
-    private:
-        void dereference(DiagLayerContainer* parentDlc);
-        String decode(const String& text) override;
-        String encode(const String& text) override;
+        Option<unsigned> intern_value_from_hex(const String&, Option<unsigned>, Option<unsigned>);
+        Option<unsigned> intern_value_from_physical(const String&);
     };
 
     struct CodedConstParam : public Param {
@@ -323,8 +348,9 @@ namespace whale {
         unsigned m_codedValue;
 
         CodedConstParam(const pugi::xml_node&);
-        String decode(const String& text) override;
-        String encode(const String& text) override;
+        Option<String> decode(const String& text) override;
+        Option<unsigned> encode(const String& text) override;
+        void dereference(Ref<DiagLayerContainer> parent) override {}
     };
 
     struct ReservedParam : public Param {
@@ -332,8 +358,9 @@ namespace whale {
         DiagCodedType m_diagCodedType;
 
         ReservedParam(const pugi::xml_node&);
-        String decode(const String& text) override;
-        String encode(const String& text) override;
+        Option<String> decode(const String& text) override;
+        Option<unsigned> encode(const String& text) override;
+        void dereference(Ref<DiagLayerContainer> parent) override {}
     };
 
     struct MatchingRequestParam : public Param {
@@ -341,35 +368,37 @@ namespace whale {
         unsigned m_byteLength;
 
         MatchingRequestParam(const pugi::xml_node&);
-        String decode(const String& text) override;
-        String encode(const String& text) override;
+        Option<String> decode(const String& text) override;
+        Option<unsigned> encode(const String& text) override;
+        void dereference(Ref<DiagLayerContainer> parent) override {}
     };
 
     struct ValueParam : public ParamWithDop {
         String m_physicalDefaultValue;
 
-        ValueParam(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
-        String decode(const String& text) override;
-        String encode(const String& text) override;
+        ValueParam(const pugi::xml_node& node);
+        Option<String> decode(const String& text) override;
+        Option<unsigned> encode(const String& text) override;
     };
 
     struct PhysConstParam : public ParamWithDop {
         String m_physConstantValue;
 
-        PhysConstParam(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
-        String decode(const String& text) override;
-        String encode(const String& text) override;
+        PhysConstParam(const pugi::xml_node& node);
+        Option<String> decode(const String& text) override;
+        Option<unsigned> encode(const String& text) override;
+        void dereference(Ref<DiagLayerContainer> parent);
 
     private:
-        unsigned m_constLowerLimit = 0;
+        Option<unsigned> m_internConstantValue = std::nullopt;
     };
 
     struct LengthKeyParam : public ParamWithDop {
         String m_id;
 
-        LengthKeyParam(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
-        String decode(const String& text) override;
-        String encode(const String& text) override;
+        LengthKeyParam(const pugi::xml_node& node);
+        Option<String> decode(const String& text) override;
+        Option<unsigned> encode(const String& text) override;
     };
 
     struct StructBase : public DopBase {
@@ -377,8 +406,9 @@ namespace whale {
         Vec<Ref<Param>> m_params;
 
         StructBase() = default;
-        StructBase(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
-        String decode(const String& text) override;
+        StructBase(const pugi::xml_node& node, Ref<DiagLayerContainer> parent);
+        void dereference();
+        Option<String> decode(const String& str, Option<unsigned> byte_position = std::nullopt, Option<unsigned> bit_position = std::nullopt) override;
         Option<unsigned> encode(const String& text) override;
     };
 
@@ -386,10 +416,10 @@ namespace whale {
         unsigned m_byteSize;
 
         Structure() = default;
-        Structure(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
+        Structure(const pugi::xml_node& node, Ref<DiagLayerContainer> parent);
     };
 
-    struct Table : public BasicInfo {
+    struct Table : public DopBase {
         struct TableRow : public BasicInfo {
             String m_key;
             Reference m_structureRef;
@@ -397,18 +427,22 @@ namespace whale {
             Ref<Structure> m_structure;  // after dereference
 
             TableRow() = default;
-            TableRow(const pugi::xml_node& node, const Map<String, Ref<Structure>>& structMap);
+            TableRow(const pugi::xml_node& node);
+            void dereference(Ref<DiagLayerContainer>);
         };
 
         String m_semantic;
         Ref<DataObjectProp> m_keyDop;
-        // table rows must be constructed in order
-        Vec<std::variant<Ref<TableRow>, Reference>> m_tableRows;
+        // table rows must be constructed in order ???
+        // Vec<std::variant<Ref<TableRow>, Reference>> m_tableRows;
+        Map<String, Ref<TableRow>> m_tableRows;
+        Vec<Reference> m_tableRowRefs;
 
         Table() = default;
-        Table(const pugi::xml_node& node,
-            const Map<String, Ref<DataObjectProp>>& dopMap,
-            const Map<String, Ref<Structure>>& structMap);
+        Table(const pugi::xml_node& node, Ref<DiagLayerContainer> parent);
+        void dereference();
+        Option<unsigned> encode(const String& value) override;
+        Option<String> decode(const String& str, Option<unsigned> byte_position = std::nullopt, Option<unsigned> bit_position = std::nullopt) override;
     };
 
     struct TableKeyParam : public Param {
@@ -417,9 +451,9 @@ namespace whale {
         Ref<Table> m_table;
 
         TableKeyParam(const pugi::xml_node& node);
-        void dereference(const Map<String, Ref<Table>>& tableMap);
-        String decode(const String& text) override;
-        String encode(const String& text) override;
+        void dereference(Ref<DiagLayerContainer> parent) override;
+        Option<String> decode(const String& text) override;
+        Option<unsigned> encode(const String& text) override;
     };
 
     struct TableStructParam : public Param {
@@ -428,26 +462,30 @@ namespace whale {
 
         // TableStructParam seems always reference to  TableKeyParam in the same structure
         TableStructParam(const pugi::xml_node& node);
-        void dereference(Ref<StructBase> parentStuct);
-        String decode(const String& text) override;
-        String encode(const String& text) override;
+        void dereference(Ref<DiagLayerContainer> parent) override;
+        Option<String> decode(const String& text) override;
+        Option<unsigned> encode(const String& text) override;
     };
 
     struct Request : public StructBase {
-        Request(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
+        Request(const pugi::xml_node& node, Ref<DiagLayerContainer> parent);
     };
 
     struct Response : public StructBase {
 
-        Response(const pugi::xml_node& node, DiagLayerContainer* parentDlc);
+        Response(const pugi::xml_node& node, Ref<DiagLayerContainer> parent);
     };
 
-    struct StaticField : public BasicInfo {
+    struct StaticField : public DopBase {
+        Reference m_basicStructureRef;
         Ref<Structure> m_basicStructure;
         unsigned m_fixedNumberOfItems;
         unsigned m_itemByteSize;
 
-        StaticField(const pugi::xml_node& node, const Map<String, Ref<Structure>>& structMap);
+        StaticField(const pugi::xml_node& node, Ref<DiagLayerContainer>);
+        void dereference();
+        Option<String> decode(const String& str, Option<unsigned> byte_position = std::nullopt, Option<unsigned> bit_position = std::nullopt) override;
+        Option<unsigned> encode(const String& text) override;
     };
 
     struct DynamicLengthField : public DopBase {
@@ -459,7 +497,8 @@ namespace whale {
             Ref<DataObjectProp> m_dataObjectProp;
 
             DeterminNumberOfItems() = default;
-            DeterminNumberOfItems(const pugi::xml_node&, const Map<String, Ref<DataObjectProp>>&);
+            DeterminNumberOfItems(const pugi::xml_node&);
+            void dereference(Ref<DiagLayerContainer>);
         };
 
 
@@ -471,44 +510,50 @@ namespace whale {
         Ref<Structure> m_basicStructure;
 
         DynamicLengthField() = default;
-        DynamicLengthField(const pugi::xml_node&, const Map<String, Ref<Structure>>&, const Map<String, Ref<DataObjectProp>>&);
-        void dereference(const Map<String, Ref<Structure>>&, const Map<String, Ref<DataObjectProp>>&);
-        String decode(const String& text) override;
+        DynamicLengthField(const pugi::xml_node&, Ref<DiagLayerContainer>);
+        void dereference();
+        Option<String> decode(const String& str, Option<unsigned> byte_position = std::nullopt, Option<unsigned> bit_position = std::nullopt) override;
         Option<unsigned> encode(const String& text) override;
     };
 
 
     struct EndOfPduField : public DopBase {
-        Ref<Structure> m_basicStruct;
+        Reference m_basicStructureRef;
+        Ref<Structure> m_basicStructure;
         unsigned m_maxItems;
         unsigned m_minItems;
         bool m_isVisible = true;
     public:
         EndOfPduField() = default;
-        EndOfPduField(const pugi::xml_node&, const Map<String, Ref<Structure>>&);
+        EndOfPduField(const pugi::xml_node&, Ref<DiagLayerContainer>);
+        void dereference();
         Option<unsigned> encode(const String& value) override;
-        String decode(const String& value) override;
+        Option<String> decode(const String& str, Option<unsigned> byte_position = std::nullopt, Option<unsigned> bit_position = std::nullopt) override;
     };
 
     struct Mux : public DopBase {
         struct SwitchKey {
             unsigned m_bytePosition = 0;
             unsigned m_bitPosition = 0;
-            Reference m_dopRef;
+            Reference m_dataObjectPropRef;
+            Ref<DataObjectProp> m_dataObjectProp;
 
             SwitchKey() = default;
             SwitchKey(const pugi::xml_node&);
+            void dereference(Ref<DiagLayerContainer>);
         };
 
         struct MuxCase {
             String m_shortName;
             String m_longName;
             Reference m_strutureRef;
+            Ref<Structure> m_structure;
             unsigned m_lowerLimit = 0;
             unsigned m_upperLimit = 0;
 
             MuxCase() {};
             MuxCase(const pugi::xml_node&);
+            void dereference(Ref<DiagLayerContainer>);
         };
 
         bool m_isVisible;
@@ -518,10 +563,11 @@ namespace whale {
         Vec<MuxCase> m_cases;
 
         Mux() = default;
-        Mux(const pugi::xml_node&);
+        Mux(const pugi::xml_node&, Ref<DiagLayerContainer>);
+        void dereference();
 
         Option<unsigned> encode(const String& value) override;
-        String decode(const String& value) override;
+        Option<String> decode(const String& str, Option<unsigned> byte_position = std::nullopt, Option<unsigned> bit_position = std::nullopt) override;
     };
 
 
@@ -542,9 +588,6 @@ namespace whale {
         String m_addressing;
         String m_semantic;
         // Vec<Reference> m_functClassRefs;
-        Reference m_requestRef;
-        Reference m_posResponseRef;
-        Reference m_negResponseRef;
         // Audience m_audience;
         Ref<Request> m_request = nullptr;
         Ref<Response> m_posResponse = nullptr;
@@ -553,10 +596,15 @@ namespace whale {
     public:
         bool decode(Trace& trace);
         int serviceId();
-        DiagService(const pugi::xml_node&);
-        void dereference(DiagLayerContainer* dlc);
+        DiagService(const pugi::xml_node&, Ref<DiagLayerContainer>);
+        void dereference();
 
     private:
+        Reference m_requestRef;
+        Reference m_posResponseRef;
+        Reference m_negResponseRef;
+        Ref<DiagLayerContainer> m_parent;
+
         bool m_derefed{ false };
         int m_serviceId{ -1 };
     };
@@ -628,16 +676,21 @@ namespace whale {
     };
     // ---------------------------
 
-    struct DiagLayerContainer : public BasicInfo {
+    struct DiagLayerContainer
+        : public std::enable_shared_from_this<DiagLayerContainer>
+    {
 
 
-
+        String m_id;
+        String m_shortName;
+        String m_longName;
         String m_containerType;
 
         // Diag Data Dictionary Specifications
         Map<String, Ref<Unit>>					m_units;
         Map<String, Ref<PhysicalDimension>>		m_physicalDimensions;
         Map<String, Ref<DtcDop>>				m_dtcDops;
+        Map<String, Ref<EnvDataDesc>>           m_envDataDescs;
         Map<String, Ref<DataObjectProp>>		m_dataObjectProps;
         Map<String, Ref<Structure>>				m_structures;
         Map<String, Ref<StaticField>>			m_staticFields;
@@ -673,11 +726,15 @@ namespace whale {
 
 
     public:
-        DiagLayerContainer(const String& dlcName);
+        DiagLayerContainer() {};
+        void initByID(const String& dlcName);
 
         void decode(Trace& trace);
         void decodeEcuTrace(EcuTrace& ecuTrace);
         void inheritDiagServices();
+        Ref<DiagLayerContainer> get_ref() {
+            return shared_from_this();
+        }
 
         Ref<FunctClass>			getFunctClassById(const String&) const;
         Ref<Request>			getRequestById(const String&) const;
@@ -685,6 +742,7 @@ namespace whale {
         Ref<DiagService>		getDiagServiceById(const String& id) const;
         Ref<DataObjectProp>		getDataObjectPropById(const String& id) const;
         Ref<DtcDop>				getDtcDopById(const String& id) const;
+        Ref<EnvDataDesc>		getEnvDataDescById(const String& id) const;
         Ref<DopBase>			getDopById(const String& id) const;
         Ref<Structure>			getStructureById(const String& id) const;
         Ref<EndOfPduField>		getEndOfPduFieldById(const String& id) const;

@@ -126,7 +126,7 @@ namespace whale {
     // ----- End: PhysicalDimension -----
 
     // ----- Start: Unit -----
-    Unit::Unit(const pugi::xml_node& node, const Map<String, Ref<PhysicalDimension>>& physDimensionMap)
+    Unit::Unit(const pugi::xml_node& node, Map<String, Ref<PhysicalDimension>>& physical_dimension_map)
         : BasicInfo(node)
     {
         m_displayName = node.child("DISPLAY-NAME").text().as_string();
@@ -136,8 +136,8 @@ namespace whale {
         if (const auto& phdRef = node.child("PHYSICAL-DIMENSION-REF")) {
             auto id = getIdRefFromXml(phdRef);
             auto doc = getDocRefFromXml(phdRef);
-            if (physDimensionMap.count(id)) {
-                m_physicalDimension = physDimensionMap.at(id);
+            if (physical_dimension_map.count(id)) {
+                m_physicalDimension = physical_dimension_map.at(id);
             }
             else {
                 m_physicalDimension = PDX::get().getPhysicalDimensionByDocAndId(doc, id);
@@ -196,7 +196,14 @@ namespace whale {
                 m_bitLength = child.text().as_uint();
             }
             if (!strcmp(child.name(), "BIT-MASK")) {
-                m_bitMask = child.value();
+                // how-the-fuck-ever, the value could be empty
+                String bit_mask = child.text().as_string();
+                if (!bit_mask.empty()) {
+                    m_bitMask = bit_mask;
+                }
+                else {
+                    WH_ERROR("Error bit_mask: {}", bit_mask);
+                }
             }
             if (!strcmp(child.name(), "MAX-LENGTH")) {
                 m_maxLength = child.text().as_uint();
@@ -213,16 +220,25 @@ namespace whale {
     {
         return String();
     }
-    Option<unsigned> DiagCodedType::diag_code(const String& str)
+
+    Option<unsigned> DiagCodedType::diag_code(const String& str, Option<unsigned> byte_pos, Option<unsigned> bit_pos)
     {
         String data{};
         unsigned value;
+        auto byte_position = byte_pos.has_value() ? byte_pos.value() : 0;
+        auto bit_position = bit_pos.has_value() ? bit_pos.value() : 0;
+
 
         switch (m_xsiType) {
         case DCType::StandardLength:
-            data = str.substr(0, std::ceil((float)(m_bitLength.value()) / 8));
+            data = str.substr(byte_position*2, std::ceil((float(bit_position + m_bitLength.value()) / 8))*2);
             value = stoi(data, 0, 16);
-            if (m_bitMask) {
+            auto shift = (bit_position + m_bitLength.value()) % 8;
+            if (shift != 0) {
+                value >> (8 - shift);
+            }
+            //value >> (8 - (bit_position + m_bitLength.value() % 8));
+            if (m_bitMask.has_value()) {
                 unsigned bit_mask = stoi(m_bitMask.value(), 0, 16);
                 value &= bit_mask;
             }
@@ -234,14 +250,16 @@ namespace whale {
     // ----- End: DiagCodedType -----
 
     // ----- Start: DopBase -----
-    DopBase::DopBase(const pugi::xml_node& node) : BasicInfo(node)
+    DopBase::DopBase(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : BasicInfo(node),
+        m_parent(parent)
     {
         m_isVisible = node.attribute("IS-VISIBLE").as_bool();
     }
 
     // ----- Start: DataObjectProp -----
-    DataObjectProp::DataObjectProp(const pugi::xml_node& node)
-        : DopBase(node)
+    DataObjectProp::DataObjectProp(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : DopBase(node, parent)
     {
         if (!strcmp(node.child("COMPU-METHOD").child_value("CATEGORY"), "IDENTICAL")) {
             m_compuMethod = CreateRef<IdenticalComputeMethod>(IdenticalComputeMethod());
@@ -261,17 +279,12 @@ namespace whale {
         }
     }
 
-    Option<unsigned> DataObjectProp::coded_value(const String& str)
-    {
-        return m_diagCodedType.diag_code(str);        
-    }
-
-    void DataObjectProp::dereference(const Map<String, Ref<Unit>>& unitMap)
+    void DataObjectProp::dereference()
     {
         if (m_unitRef.has_value()) {
             auto id = m_unitRef->idRef;
-            if (unitMap.count(id)) {
-                m_unit = unitMap.at(id);
+            if (m_parent->m_units.count(id)) {
+                m_unit = m_parent->m_units.at(id);
             }
             else {
                 auto doc = m_unitRef->docRef;
@@ -289,13 +302,37 @@ namespace whale {
         return m_compuMethod->encode(value);
     }
 
-    String DataObjectProp::decode(const String& str)
+    /*
+    *  @param str: Hex String of can message
+    *  @param byte_position: Optional byte position from Param
+    *  @param bit_position: Optional bit position from Param
+    * 
+    *  Receive a hex string, starting position(byte and bit possibly),
+    *  compute the responding Text
+    */   
+    Option<String> DataObjectProp::decode(const String& str,
+        Option<unsigned> byte_position,
+        Option<unsigned> bit_position)
     {
-        auto diag_code_value = m_diagCodedType.diag_code(str);
-        
-        if (diag_code_value) {
+        auto diag_code_value = m_diagCodedType.diag_code(str, byte_position, bit_position);
+
+        if (diag_code_value.has_value()) {
             return m_compuMethod->decode(diag_code_value.value());
         }
+        return std::nullopt;
+    }
+
+    Option<unsigned> DataObjectProp::intern_value_from_hex(
+        const String& str,
+        Option<unsigned> byte_position,
+        Option<unsigned> bit_position)
+    {
+        return m_diagCodedType.diag_code(str, byte_position, bit_position);
+    }
+
+    Option<unsigned> DataObjectProp::intern_value_from_physical(const String& str)
+    {
+        return m_compuMethod->encode(str);
     }
 
     PhysicalType::PhysicalType(const pugi::xml_node& node)
@@ -359,8 +396,8 @@ namespace whale {
     // ----- End: DTC -----
 
     // ----- Start: DtcDop -----
-    DtcDop::DtcDop(const pugi::xml_node& node)
-        : DataObjectProp(node)
+    DtcDop::DtcDop(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : DataObjectProp(node, parent)
     {
         m_isVisible = node.attribute("IS-VISIBLE").as_bool();
         // dtcs
@@ -399,21 +436,21 @@ namespace whale {
         m_codedValue = node.child("CODED-VALUE").text().as_uint();
     }
 
-    String CodedConstParam::decode(const String& text)
+    Option<String> CodedConstParam::decode(const String& text)
     {
-        auto value = m_diagCodedType.diag_code(text);
+        /*auto value = m_diagCodedType.diag_code(text);
         if (value == m_codedValue) {
             return String{ "CodedValue" };
-        }
-        return String();
+        }*/
+        return std::nullopt;
     }
 
-    String CodedConstParam::encode(const String& text)
+    Option<unsigned> CodedConstParam::encode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
 
-    ParamWithDop::ParamWithDop(const pugi::xml_node& node, DiagLayerContainer* parentDlc)
+    ParamWithDop::ParamWithDop(const pugi::xml_node& node)
         : Param(node)
     {
         if (const auto& dopRef = node.child("DOP-REF")) {
@@ -421,108 +458,114 @@ namespace whale {
             String doc = getDocRefFromXml(dopRef);
 
             m_dopRef = Reference{ id, doc };
-            if (doc.empty() || doc == parentDlc->id()) {
-                m_dop = parentDlc->getDataObjectPropById(id);
-            }
-            else {
-                m_dop = PDX::get().getDopByDocAndId(doc, id);
-                if (!m_dop) {
-                    WH_ERROR("Failed to get dop {} from DOP ref", m_dopSNRef.value());
-                }
-            }
         }
         if (const auto& dopSNRef = node.child("DOP-SNREF")) {
             m_dopSNRef = dopSNRef.attribute("SHORT-NAME").as_string();
-            {
-                if (m_dopSNRef == "MUX_DTCExtenDataRecor") {
-                    WH_INFO("We are here");
-                }
-            }
-            m_dop = parentDlc->getDopById(m_dopSNRef.value());
-            if (!m_dop) {
-                WH_ERROR("Failed to get dop {} from SNRef", m_dopSNRef.value());
-            }
         }
     }
 
-    void ParamWithDop::dereference(DiagLayerContainer* parentDlc)
+    void ParamWithDop::dereference(Ref<DiagLayerContainer> parent)
     {
         if (m_dopSNRef.has_value()) {
-            if (m_dopSNRef->substr(0, 3) == "DOP") {
-                m_dop = parentDlc->m_dataObjectProps.at(*m_dopSNRef);
-            }
+            m_dop = parent->getDopById(*m_dopSNRef);
         }
         else if (m_dopRef.has_value()) {
             auto id = m_dopRef->idRef;
             auto doc = m_dopRef->docRef;
-            m_dop = PDX::get().getDopByDocAndId(doc, id);
+            if (doc.empty() || doc == parent->id()) {
+                m_dop = parent->getDopById(id);
+            }
+            else {
+                m_dop = PDX::get().getDopByDocAndId(doc, id);
+            }
+        }
+        if (!m_dop) {
+            WH_ERROR("Failed to get dop {} from SNRef", m_dopSNRef.value());
         }
     }
 
-    String ParamWithDop::decode(const String& text)
+    Option<String> ParamWithDop::decode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
 
-    String ParamWithDop::encode(const String& text)
+    Option<unsigned> ParamWithDop::encode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
 
-    ValueParam::ValueParam(const pugi::xml_node& node, DiagLayerContainer* parentDlc)
-        : ParamWithDop(node, parentDlc)
+    Option<unsigned> ParamWithDop::intern_value_from_hex(
+        const String& str,
+        Option<unsigned> byte_pos,
+        Option<unsigned> bit_pos)
+    {
+        auto dop = std::dynamic_pointer_cast<DataObjectProp>(m_dop);
+        return dop->intern_value_from_hex(str, byte_pos, bit_pos);
+
+    }
+
+    Option<unsigned> ParamWithDop::intern_value_from_physical(const String& str)
+    {
+        auto dop = std::dynamic_pointer_cast<DataObjectProp>(m_dop);
+        return dop->intern_value_from_physical(str);
+    }
+
+    ValueParam::ValueParam(const pugi::xml_node& node)
+        : ParamWithDop(node)
     {
         m_physicalDefaultValue = node.child_value("PHYSICAL-DEFAULT-VALUE");
     }
 
-    String ValueParam::decode(const String& text)
+    Option<String> ValueParam::decode(const String& text)
     {
-        // bit_position is optional, but lets first figure out the method
-        return m_dop->decode(text.substr(m_bytePosition.value()*2));
+        return m_dop->decode(text, m_bytePosition, m_bitPosition);
     }
 
-    String ValueParam::encode(const String& text)
+    Option<unsigned> ValueParam::encode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
 
-    PhysConstParam::PhysConstParam(const pugi::xml_node& node, DiagLayerContainer* parentDlc)
-        : ParamWithDop(node, parentDlc)
+    PhysConstParam::PhysConstParam(const pugi::xml_node& node)
+        : ParamWithDop(node)
     {
         m_physConstantValue = node.child_value("PHYS-CONSTANT-VALUE");
-        auto value = m_dop->encode(m_physConstantValue);
+        /*auto value = m_dop->encode(m_physConstantValue);
         if (value) {
             m_constLowerLimit = value.value();
         }
         else {
             WH_ERROR("Param {} failed to get its constant value from dop {}", m_shortName, m_dop->id());
-        }
+        }*/
     }
 
-    String PhysConstParam::decode(const String& text)
+    Option<String> PhysConstParam::decode(const String& text)
     {
-        /*String decoded;
-        if (!m_bytePosition.has_value()) {
-            return decoded;
-        }
-
-        auto dop = std::dynamic_pointer_cast<DataObjectProp>(m_dop);
-        if (m_semantic == "SUPPRESS-POS-RESPONSE") {
-            auto byte = text.substr(m_bytePosition.value() * 2, 2);
-            auto value = std::stoi(byte, 0, 16) & (1 < (7 - m_bitPosition));
-            return dop->m_compuMethod->decode(value);
-        }
-        auto value = text.substr(m_bytePosition.value() * 2);
-        return dop->m_compuMethod->decode(value);*/
-        if (std::stoi(text, 0, 16) == m_constLowerLimit) {
+        auto value = this->intern_value_from_hex(text, m_bytePosition, m_bitPosition);
+        if (value == m_internConstantValue) {
             return m_physConstantValue;
         }
-        return String();
+        return std::nullopt;
     }
 
-    String PhysConstParam::encode(const String& text)
+    Option<unsigned> PhysConstParam::encode(const String& text)
     {
-        return String();
+        if (text == m_physConstantValue) {
+            return m_internConstantValue;
+        }
+        return std::nullopt;
+    }
+
+    void PhysConstParam::dereference(Ref<DiagLayerContainer> parent)
+    {
+        ParamWithDop::dereference(parent);
+        auto result = intern_value_from_physical(m_physConstantValue);
+        if (result.has_value()) {
+            m_internConstantValue = result.value();
+        }
+        else {
+            WH_ERROR("{} failed to encode {}", this->m_shortName, m_physConstantValue);
+        }
     }
 
     ReservedParam::ReservedParam(const pugi::xml_node& node)
@@ -532,14 +575,14 @@ namespace whale {
         m_diagCodedType = DiagCodedType(node.child("DIAG-CODED-TYPE"));
     }
 
-    String ReservedParam::decode(const String& text)
+    Option<String> ReservedParam::decode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
 
-    String ReservedParam::encode(const String& text)
+    Option<unsigned> ReservedParam::encode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
 
     TableKeyParam::TableKeyParam(const pugi::xml_node& node)
@@ -550,10 +593,10 @@ namespace whale {
 
     }
 
-    void TableKeyParam::dereference(const Map<String, Ref<Table>>& tableMap) {
+    void TableKeyParam::dereference(Ref<DiagLayerContainer> parent) {
         const auto& id = m_tableRef.idRef;
-        if (tableMap.count(id)) {
-            m_table = tableMap.at(id);
+        if (parent->m_tables.count(id)) {
+            m_table = parent->m_tables.at(id);
         }
         else {
             const auto& doc = m_tableRef.docRef;
@@ -564,14 +607,14 @@ namespace whale {
         }
     }
 
-    String TableKeyParam::decode(const String& text)
+    Option<String> TableKeyParam::decode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
 
-    String TableKeyParam::encode(const String& text)
+    Option<unsigned> TableKeyParam::encode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
 
     TableStructParam::TableStructParam(const pugi::xml_node& node)
@@ -580,9 +623,9 @@ namespace whale {
         m_tableKeyRef = Reference(node.child("TABLE-KEY-REF"));
     }
 
-    void TableStructParam::dereference(Ref<StructBase> parentStuct)
+    void TableStructParam::dereference(Ref<DiagLayerContainer> parent)
     {
-        String idRef = m_tableKeyRef.idRef;
+        /*String idRef = m_tableKeyRef.idRef;
         for (Ref<Param> param : parentStuct->m_params) {
             if (param->m_type == "TABLE-KEY") {
                 m_tableKey = std::static_pointer_cast<TableKeyParam>(param);
@@ -590,17 +633,17 @@ namespace whale {
         }
         if (!m_tableKey || m_tableKey->m_id != idRef) {
             WH_ERROR("No TableKeyParam found!");
-        }
+        }*/
     }
 
-    String TableStructParam::decode(const String& text)
+    Option<String> TableStructParam::decode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
 
-    String TableStructParam::encode(const String& text)
+    Option<unsigned> TableStructParam::encode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
 
     MatchingRequestParam::MatchingRequestParam(const pugi::xml_node& node)
@@ -610,39 +653,39 @@ namespace whale {
         m_byteLength = node.child("BYTE-LENGTH").text().as_uint();
     }
 
-    String MatchingRequestParam::decode(const String& text)
+    Option<String> MatchingRequestParam::decode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
 
-    String MatchingRequestParam::encode(const String& text)
+    Option<unsigned> MatchingRequestParam::encode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
 
-    LengthKeyParam::LengthKeyParam(const pugi::xml_node& node, DiagLayerContainer* parentDlc)
-        : ParamWithDop(node, parentDlc)
+    LengthKeyParam::LengthKeyParam(const pugi::xml_node& node)
+        : ParamWithDop(node)
     {
         m_id = getIdFromXml(node);
     }
-    String LengthKeyParam::decode(const String& text)
+    Option<String> LengthKeyParam::decode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
-    String LengthKeyParam::encode(const String& text)
+    Option<unsigned> LengthKeyParam::encode(const String& text)
     {
-        return String();
+        return std::nullopt;
     }
     // ----- End: Param -----
 
-    StructBase::StructBase(const pugi::xml_node& node, DiagLayerContainer* parentDlc)
-        : DopBase(node)
+    StructBase::StructBase(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : DopBase(node, parent)
     {
         // params
         for (const auto& param : node.child("PARAMS").children()) {
             auto type = getXsiTypeFromXml(param);
             if (type == "VALUE") {
-                m_params.emplace_back(CreateRef<ValueParam>(ValueParam(param, parentDlc)));
+                m_params.emplace_back(CreateRef<ValueParam>(ValueParam(param)));
             }
             else if (type == "RESERVED") {
                 m_params.emplace_back(CreateRef<ReservedParam>(ReservedParam(param)));
@@ -651,10 +694,10 @@ namespace whale {
                 m_params.emplace_back(CreateRef<CodedConstParam>(CodedConstParam(param)));
             }
             else if (type == "PHYS-CONST") {
-                m_params.emplace_back(CreateRef<PhysConstParam>(PhysConstParam(param, parentDlc)));
+                m_params.emplace_back(CreateRef<PhysConstParam>(PhysConstParam(param)));
             }
             else if (type == "LENGTH-KEY") {
-                m_params.emplace_back(CreateRef<LengthKeyParam>(LengthKeyParam(param, parentDlc)));
+                m_params.emplace_back(CreateRef<LengthKeyParam>(LengthKeyParam(param)));
             }
             else if (type == "MATCHING-REQUEST-PARAM") {
                 m_params.emplace_back(CreateRef<MatchingRequestParam>(MatchingRequestParam(param)));
@@ -668,9 +711,18 @@ namespace whale {
         }
     }
 
-    String StructBase::decode(const String& text)
+    void StructBase::dereference()
     {
-        return String();
+        for (auto& param : m_params) {
+            param->dereference(m_parent);
+        }
+    }
+
+    Option<String> StructBase::decode(const String& str,
+        Option<unsigned> byte_position,
+        Option<unsigned> bit_position)
+    {
+        return std::nullopt;
     }
 
     Option<unsigned> StructBase::encode(const String& text)
@@ -679,78 +731,100 @@ namespace whale {
     }
 
     // ----- Start: Structure -----
-    Structure::Structure(const pugi::xml_node& node, DiagLayerContainer* parentDlc)
-        : StructBase(node, parentDlc)
+    Structure::Structure(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : StructBase(node, parent)
     {
         m_byteSize = node.child("BYTE-SIZE").text().as_uint();
     }
     // ----- End: Structure -----
 
     // ----- Start: Request -----
-    Request::Request(const pugi::xml_node& node, DiagLayerContainer* parentDlc)
-        : StructBase(node, parentDlc)
+    Request::Request(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : StructBase(node, parent)
     {
     }
     // ----- End: Request -----
 
     // ----- Start: Response -----
-    Response::Response(const pugi::xml_node& node, DiagLayerContainer* parentDlc)
-        : StructBase(node, parentDlc)
+    Response::Response(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : StructBase(node, parent)
     {
     }
     // ----- End: Response -----
 
     // ----- Start: StaticField -----
-    StaticField::StaticField(const pugi::xml_node& node, const Map<String, Ref<Structure>>& structMap)
-        : BasicInfo(node)
+    StaticField::StaticField(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : DopBase(node, parent)
     {
-        auto id = getIdRefFromXml(node.child("BASIC-STRUCTURE-REF"));
-        if (structMap.count(id)) {
-            m_basicStructure = structMap.at(id);
-        }
-        else {
-            auto doc = getDocRefFromXml(node.child("BASIC-STRUCTURE-REF"));
-            m_basicStructure = PDX::get().getStructureByDocAndId(doc, id);
-            if (!m_basicStructure) {
-                WH_ERROR("No structure found!");
-            }
-        }
+        m_basicStructureRef = Reference(node.child("BASIC-STRUCTURE-REF"));
 
         m_fixedNumberOfItems = node.child("FIXED-NUMBER-OF-ITEMS").text().as_uint();
         m_itemByteSize = node.child("ITEM-BYTE-SIZE").text().as_uint();
+    }
+    void StaticField::dereference()
+    {
+        auto& id = m_basicStructureRef.idRef;
+        auto& doc = m_basicStructureRef.docRef;
+        if (doc.empty()) {
+            m_basicStructure = m_parent->m_structures.at(id);
+        }
+        else {
+            m_basicStructure = PDX::get().getStructureByDocAndId(doc, id);
+        }
+        if (!m_basicStructure) {
+            WH_ERROR("No basic structure found for {} - {}!", m_parent->id(), this->id());
+        }
+    }
+    Option<String> StaticField::decode(const String& str,
+        Option<unsigned> byte_position,
+        Option<unsigned> bit_position)
+    {
+        return std::nullopt;
+    }
+    Option<unsigned> StaticField::encode(const String& text)
+    {
+        return std::nullopt;
     }
     // ----- End: StaticField -----
 
     // ----- Start: DynamicLengthField -----
     DynamicLengthField::DynamicLengthField(
         const pugi::xml_node& node,
-        const Map<String, Ref<Structure>>& structMap,
-        const Map<String, Ref<DataObjectProp>>& dopMap
+        Ref<DiagLayerContainer> parent
     )
-        : DopBase(node)
+        : DopBase(node, parent)
     {
         m_isVisible = node.attribute("IS-VISIBLE").as_bool();;
         m_offset = node.child("OFFSET").text().as_uint();
         m_basicStructureRef = Reference(node.child("BASIC-STRUCTURE-REF"));
 
-        auto id = m_basicStructureRef.idRef;
-        if (structMap.count(id)) {
-            m_basicStructure = structMap.at(id);
-        }
-        else {
-            auto doc = m_basicStructureRef.docRef;
-            m_basicStructure = PDX::get().getStructureByDocAndId(doc, id);
-            if (!m_basicStructure) {
-                WH_ERROR("No structure found!");
-            }
-        }
 
-        m_determinNumberOfItems = DeterminNumberOfItems(node.child("DETERMINE-NUMBER-OF-ITEMS"), dopMap);
+        m_determinNumberOfItems = DeterminNumberOfItems(node.child("DETERMINE-NUMBER-OF-ITEMS"));
     }
 
-    String DynamicLengthField::decode(const String& text)
+    void DynamicLengthField::dereference()
     {
-        return String();
+
+        auto& id = m_basicStructureRef.idRef;
+        auto& doc = m_basicStructureRef.docRef;
+        if (doc.empty() || doc == m_parent->id()) {
+            m_basicStructure = m_parent->m_structures.at(id);
+        }
+        else {
+            m_basicStructure = PDX::get().getStructureByDocAndId(doc, id);
+        }
+        if (!m_basicStructure) {
+            WH_ERROR("No structure found!");
+        }
+
+        m_determinNumberOfItems.dereference(m_parent);
+    }
+
+    Option<String> DynamicLengthField::decode(const String& str,
+        Option<unsigned> byte_position,
+        Option<unsigned> bit_position)
+    {
+        return std::nullopt;
     }
 
     Option<unsigned> DynamicLengthField::encode(const String& text)
@@ -758,58 +832,61 @@ namespace whale {
         return std::nullopt;
     }
 
-    DynamicLengthField::DeterminNumberOfItems::DeterminNumberOfItems(
-        const pugi::xml_node& node,
-        const Map<String, Ref<DataObjectProp>>& dopMap
-    )
+    DynamicLengthField::DeterminNumberOfItems::DeterminNumberOfItems(const pugi::xml_node& node)
     {
         m_bytePosition = node.child("BYTE-POSITION").text().as_uint();
         m_bitPosition = node.child("BIT-POSITION").text().as_uint();
         m_dataObjectPropRef = Reference(node.child("DATA-OBJECT-PROP-REF"));
-
-        Ref<DataObjectProp> m_dataObjectProp;
-
-        auto id = m_dataObjectPropRef.idRef;
-        if (dopMap.count(id)) {
-            m_dataObjectProp = dopMap.at(id);
+    }
+    void DynamicLengthField::DeterminNumberOfItems::dereference(Ref<DiagLayerContainer> parent)
+    {
+        auto& id = m_dataObjectPropRef.idRef;
+        auto& doc = m_dataObjectPropRef.docRef;
+        if (doc.empty() || doc == parent->id()) {
+            m_dataObjectProp = parent->getDataObjectPropById(id);
         }
         else {
-            auto doc = m_dataObjectPropRef.docRef;
             m_dataObjectProp = PDX::get().getDataObjectPropByDocAndId(doc, id);
         }
         if (!m_dataObjectProp) {
-            WH_ERROR("No data object prop found!");
+            WH_ERROR("No structure found!");
         }
     }
     // ----- End: DynamicLengthField -----
 
     // ----- Start: EndOfPduField -----
-    EndOfPduField::EndOfPduField(const pugi::xml_node& node, const Map<String, Ref<Structure>>& structMap)
-        : DopBase(node)
+    EndOfPduField::EndOfPduField(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : DopBase(node, parent)
     {
-        auto id = getIdRefFromXml(node.child("BASIC-STRUCTURE-REF"));
-        if (structMap.count(id)) {
-            m_basicStruct = structMap.at(id);
-        }
-        else {
-            auto doc = getDocRefFromXml(node.child("BASIC-STRUCTURE-REF"));
-            m_basicStruct = PDX::get().getStructureByDocAndId(doc, id);
-            if (!m_basicStruct) {
-                WH_ERROR("No structure found!");
-            }
-        }
+        m_basicStructureRef = Reference(node.child("BASIC-STRUCTURE-REF"));
         m_maxItems = node.child("MAX-NUMBER-OF-ITEMS").text().as_uint();
         m_minItems = node.child("MIN-NUMBER-OF-ITEMS").text().as_uint();
 
         m_isVisible = node.attribute("IS-VISIBLE").as_bool();
     }
+    void EndOfPduField::dereference()
+    {
+        auto& id = m_basicStructureRef.idRef;
+        auto& doc = m_basicStructureRef.docRef;
+        if (doc.empty() || doc == m_parent->id()) {
+            m_basicStructure = m_parent->m_structures.at(id);
+        }
+        else {
+            m_basicStructure = PDX::get().getStructureByDocAndId(doc, id);
+        }
+        if (!m_basicStructure) {
+            WH_ERROR("No structure found!");
+        }
+    }
     Option<unsigned> EndOfPduField::encode(const String& value)
     {
         return Option<unsigned>();
     }
-    String EndOfPduField::decode(const String& value)
+    Option<String> EndOfPduField::decode(const String& str,
+        Option<unsigned> byte_position,
+        Option<unsigned> bit_position)
     {
-        return String();
+        return std::nullopt;
     }
     // ----- End: EndOfPduField -----
 
@@ -817,7 +894,22 @@ namespace whale {
     Mux::SwitchKey::SwitchKey(const pugi::xml_node& node) {
         m_bytePosition = node.child("BYTE-POSITION").text().as_uint();
         m_bitPosition = node.child("BIT-POSITION").text().as_uint();
-        m_dopRef = Reference(node.child("DATA-OBJECT-PROP-REF"));
+        m_dataObjectPropRef = Reference(node.child("DATA-OBJECT-PROP-REF"));
+    }
+
+    void Mux::SwitchKey::dereference(Ref<DiagLayerContainer> parent)
+    {
+        auto& id = m_dataObjectPropRef.idRef;
+        auto& doc = m_dataObjectPropRef.docRef;
+        if (doc.empty() || doc == parent->id()) {
+            m_dataObjectProp = parent->getDataObjectPropById(id);
+        }
+        else {
+            m_dataObjectProp = PDX::get().getDataObjectPropByDocAndId(doc, id);
+        }
+        if (!m_dataObjectProp) {
+            WH_ERROR("No structure found!");
+        }
     }
 
     Mux::MuxCase::MuxCase(const pugi::xml_node& node) {
@@ -828,7 +920,23 @@ namespace whale {
         m_upperLimit = node.child("UPPER-LIMIT").text().as_uint();
     }
 
-    Mux::Mux(const pugi::xml_node& node) : DopBase(node)
+    void Mux::MuxCase::dereference(Ref<DiagLayerContainer> parent)
+    {
+        auto& id = m_strutureRef.idRef;
+        auto& doc = m_strutureRef.docRef;
+        if (doc.empty() || doc == parent->id()) {
+            m_structure = parent->getStructureById(id);
+        }
+        else {
+            m_structure = PDX::get().getStructureByDocAndId(doc, id);
+        }
+        if (!m_structure) {
+            WH_ERROR("No structure found!");
+        }
+    }
+
+    Mux::Mux(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : DopBase(node, parent)
     {
         m_isVisible = node.attribute("IS-VISIBLE").as_bool();
         m_bytePosition = node.child("BYTE-POSITION").text().as_uint();
@@ -839,44 +947,57 @@ namespace whale {
             m_cases.push_back(MuxCase(_case));
         }
     }
+    void Mux::dereference()
+    {
+        m_switchKey.dereference(m_parent);
+        for (auto& mux_case : m_cases) {
+            mux_case.dereference(m_parent);
+        }
+    }
     Option<unsigned> Mux::encode(const String& value)
     {
         return Option<unsigned>();
     }
-    String Mux::decode(const String& value)
+
+    Option<String> Mux::decode(const String& str,
+        Option<unsigned> byte_position,
+        Option<unsigned> bit_position)
     {
-        return String();
+        return std::nullopt;
     }
     // ----- End: Mux -----
 
     // ----- Start: Table -----
-    Table::TableRow::TableRow(const pugi::xml_node& node, const Map<String, Ref<Structure>>& structMap)
+    Table::TableRow::TableRow(const pugi::xml_node& node)
         : BasicInfo(node)
     {
-        const auto& id = getIdRefFromXml(node.child("STRUCTURE-REF"));
-        if (structMap.count(id)) {
-            m_structure = structMap.at(id);
-        }
-        else {
-            const auto& doc = getDocRefFromXml(node.child("STRUCTURE-REF"));
-            m_structure = PDX::get().getStructureByDocAndId(doc, id);
-            if (!m_structure) {
-                WH_ERROR("No structure found!");
-            }
-        }
+        m_structureRef = Reference(node.child("STRUCTURE-REF"));
         m_key = node.child_value("KEY");
     }
 
-    Table::Table(const pugi::xml_node& node,
-        const Map<String, Ref<DataObjectProp>>& dopMap,
-        const Map<String, Ref<Structure>>& structMap)
-        : BasicInfo(node)
+    void Table::TableRow::dereference(Ref<DiagLayerContainer> parent)
+    {
+        auto& id = m_structureRef.idRef;
+        auto& doc = m_structureRef.docRef;
+        if (doc.empty()) {
+            m_structure = parent->m_structures.at(id);
+        }
+        else {
+            m_structure = PDX::get().getStructureByDocAndId(doc, id);
+        }
+        if (!m_structure) {
+            WH_ERROR("No structure found!");
+        }
+    }
+
+    Table::Table(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : DopBase(node, parent)
     {
         m_semantic = node.attribute("SEMANTIC").value();
 
         const auto& id = getIdRefFromXml(node.child("KEY-DOP-REF"));
-        if (dopMap.count(id)) {
-            m_keyDop = dopMap.at(id);
+        if (m_parent->m_dataObjectProps.count(id)) {
+            m_keyDop = m_parent->m_dataObjectProps.at(id);
         }
         else {
             const auto& doc = getDocRefFromXml(node.child("KEY-DOP-REF"));
@@ -889,12 +1010,46 @@ namespace whale {
 
         for (auto& child : node.children()) {
             if (!strcmp(child.name(), "TABLE-ROW")) {
-                m_tableRows.emplace_back(CreateRef<TableRow>(TableRow(child, structMap)));
+                const auto& id = getIdFromXml(child);
+                m_tableRows[id] = CreateRef<TableRow>(TableRow(child));
             }
             else if (!strcmp(child.name(), "TABLE-ROW-REF")) {
-                m_tableRows.emplace_back(Reference(child));
+                m_tableRowRefs.emplace_back(Reference(child));
             }
         }
+    }
+    void Table::dereference()
+    {
+        for (auto& row : m_tableRowRefs) {
+            // it's a reference to TableRow
+            auto& id = row.idRef;
+            auto& doc = row.docRef;
+            Ref<Table> table;
+            auto dot_position = id.find_first_of('.');
+            auto table_id = id.substr(0, dot_position);
+
+            if (doc.empty()) {
+                table = m_parent->m_tables.at(table_id);
+            }
+            else {
+                table = PDX::get().getTableByDocAndId(doc, table_id);
+            }
+            if (!table) {
+                WH_ERROR("No table found!");
+            }
+            m_tableRows[id] = table->m_tableRows.at(id);
+        }
+    }
+    Option<unsigned> Table::encode(const String& value)
+    {
+        return Option<unsigned>();
+    }
+    
+    Option<String> Table::decode(const String& str,
+        Option<unsigned> byte_position,
+        Option<unsigned> bit_position)
+    {
+        return std::nullopt;
     }
     // ----- End: Table -----
 
@@ -912,16 +1067,18 @@ namespace whale {
     {
         //auto firstParam = CreateRef<CodedConstParam>;
         auto sid = stoi(trace.hexTrace.substr(0, 2), 0, 16);
+        bool find = trace.hexTrace.starts_with("22f1b4");
         String decoded;
         if (trace.type == MESSAGE_TYPE::SEND) {
             if (sid == serviceId()) {
+                bool find = sid == 16;
                 String result;
                 for (auto i = 1; i < m_request->m_params.size(); i++) {
-                    auto temp = m_request->m_params[1]->decode(trace.hexTrace);
-                    if (temp.empty()) {
+                    auto temp = m_request->m_params[i]->decode(trace.hexTrace);
+                    if (!temp.has_value()) {
                         return false;
                     }
-                    result += "\n\t" + temp;
+                    result += "\n\t" + temp.value();
                 }
                 decoded = m_request->m_longName + result;
             }
@@ -952,8 +1109,9 @@ namespace whale {
     }
 
     // ----- Start: DiagService -----
-    DiagService::DiagService(const pugi::xml_node& node)
-        : BasicInfo(node)
+    DiagService::DiagService(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : BasicInfo(node),
+        m_parent(parent)
     {
 
         m_addressing = node.attribute("ADDRESSING").value();
@@ -965,23 +1123,23 @@ namespace whale {
         m_posResponseRef = Reference(node.child("POS-RESPONSE-REFS").first_child());
         m_negResponseRef = Reference(node.child("NEG-RESPONSE-REFS").first_child());
     }
-    void DiagService::dereference(DiagLayerContainer* dlc)
+    void DiagService::dereference()
     {
         // When the referenced doc is it self, directly use it,
         // or it result in infinite loop
 
-        if (m_requestRef.docRef.empty() || m_requestRef.docRef == dlc->id()) {
-            m_request = dlc->m_requests[m_requestRef.idRef];
+        if (m_requestRef.docRef.empty() || m_requestRef.docRef == m_parent->id()) {
+            m_request = m_parent->getRequestById(m_requestRef.idRef);
         }
         else {
             m_request = PDX::get().getDlcById(m_requestRef.docRef)->getRequestById(m_requestRef.idRef);
         }
 
         if (m_posResponseRef.docRef.empty()) {
-            m_posResponse = dlc->m_posResponses[m_posResponseRef.idRef];
+            m_posResponse = m_parent->getResponseById(m_posResponseRef.idRef);
         }
         else {
-            m_posResponse = PDX::get().getDlcById(m_posResponseRef.docRef)->m_posResponses[m_posResponseRef.idRef];
+            m_posResponse = PDX::get().getDlcById(m_posResponseRef.docRef)->getResponseById(m_posResponseRef.idRef);
         }
     }
     // ----- End: Class DiagService -----
@@ -1074,7 +1232,7 @@ namespace whale {
     // ----- End: Class ParentRef -----
 
     // ---- Start: DiagLayerContainer -----
-    DiagLayerContainer::DiagLayerContainer(const String& dlcName)
+    void DiagLayerContainer::initByID(const String& dlcName)
     {
         // WH_INFO("Initializing DLC [{}]", dlcName);
         pugi::xml_document doc;
@@ -1147,49 +1305,54 @@ namespace whale {
         // dtc dops
         for (const auto& dd : specNode.child("DTC-DOPS").children()) {
             String id = getIdFromXml(dd);
-            m_dtcDops[id] = CreateRef<DtcDop>(DtcDop(dd));
+            m_dtcDops[id] = CreateRef<DtcDop>(DtcDop(dd, get_ref()));
         }
 
+        // env data descs
+        for (const auto& edd : specNode.child("ENV-DATA-DESCS").children()) {
+            String id = getIdFromXml(edd);
+            m_envDataDescs[id] = CreateRef<EnvDataDesc>(EnvDataDesc(edd, get_ref()));
+        }
         // dataObjectProps
         for (auto& dataObjProp : specNode.child("DATA-OBJECT-PROPS").children()) {
             String id = getIdFromXml(dataObjProp);
-            m_dataObjectProps[id] = CreateRef<DataObjectProp>(DataObjectProp(dataObjProp));
+            m_dataObjectProps[id] = CreateRef<DataObjectProp>(DataObjectProp(dataObjProp, get_ref()));
         }
 
         // structures
         for (auto& structure : specNode.child("STRUCTURES").children()) {
             String id = getIdFromXml(structure);
-            m_structures[id] = CreateRef<Structure>(Structure(structure, this));
+            m_structures[id] = CreateRef<Structure>(Structure(structure, get_ref()));
         }
 
         // staticFields
         for (auto& staticField : specNode.child("STATIC-FIELDS").children()) {
             String id = getIdFromXml(staticField);
-            m_staticFields[id] = CreateRef<StaticField>(StaticField(staticField, m_structures));
+            m_staticFields[id] = CreateRef<StaticField>(StaticField(staticField, get_ref()));
         }
 
         // Dynamic Length Fields
         for (auto& dlf : specNode.child("DYNAMIC-LENGTH-FIELDS").children()) {
             String id = getIdFromXml(dlf);
-            m_dynamicLengthFields[id] = CreateRef<DynamicLengthField>(DynamicLengthField(dlf, m_structures, m_dataObjectProps));
+            m_dynamicLengthFields[id] = CreateRef<DynamicLengthField>(DynamicLengthField(dlf, get_ref()));
         }
 
         // End of PDU Fields
         for (auto& eopf : specNode.child("END-OF-PDU-FIELDS").children()) {
             String id = getIdFromXml(eopf);
-            m_endOfPduFields[id] = CreateRef<EndOfPduField>(EndOfPduField(eopf, m_structures));
+            m_endOfPduFields[id] = CreateRef<EndOfPduField>(EndOfPduField(eopf, get_ref()));
         }
 
         // Muxes
         for (auto& mux : specNode.child("MUXS").children()) {
             String id = getIdFromXml(mux);
-            m_muxes[id] = CreateRef<Mux>(Mux(mux));
+            m_muxes[id] = CreateRef<Mux>(Mux(mux, get_ref()));
         }
 
         // Tables
         for (auto& table : specNode.child("TABLES").children()) {
             String id = getIdFromXml(table);
-            m_tables[id] = CreateRef<Table>(Table(table, m_dataObjectProps, m_structures));
+            m_tables[id] = CreateRef<Table>(Table(table, get_ref()));
         }
 
 
@@ -1200,25 +1363,27 @@ namespace whale {
         }*/
 
         // Requests
+        bool find = (m_id == "FG_AllUDSSyste" || m_id == "FG_AllOBDSyste");
+
         for (auto& request : node.child("REQUESTS").children("REQUEST")) {
             String id = getIdFromXml(request);
-            m_requests[id] = CreateRef<Request>(Request(request, this));
+            m_requests[id] = CreateRef<Request>(Request(request, get_ref()));
         }
 
         // Pos Responses
         for (auto& pr : node.child("POS-RESPONSES").children("POS-RESPONSE")) {
             String id = getIdFromXml(pr);
-            m_posResponses[id] = CreateRef<Response>(Response(pr, this));
+            m_posResponses[id] = CreateRef<Response>(Response(pr, get_ref()));
         }
 
         // Neg Responses
         for (auto& nr : node.child("NEG-RESPONSES").children("NEG-RESPONSE")) {
             String id = getIdFromXml(nr);
-            m_negResponses[id] = CreateRef<Response>(Response(nr, this));
+            m_negResponses[id] = CreateRef<Response>(Response(nr, get_ref()));
         }
         for (auto& gnr : node.child("GLOBAL-NEG-RESPONSES").children()) {
             String id = getIdFromXml(gnr);
-            m_globalNegResponses[id] = CreateRef<Response>(Response(gnr, this));
+            m_globalNegResponses[id] = CreateRef<Response>(Response(gnr, get_ref()));
         }
 
         // ----- DiagComms -----
@@ -1261,16 +1426,23 @@ namespace whale {
         for (auto& diagComm : node.child("DIAG-COMMS").children()) {
             if (!strcmp(diagComm.name(), "DIAG-SERVICE")) {
                 String id = getIdFromXml(diagComm);
+                if (id.ends_with("GenerServi")) {
+                    continue;
+                }
                 String shortName = getShortNameFromXml(diagComm);
                 // auto dct = DiagCommType::DiagService;
-                auto ds = CreateRef<DiagService>(DiagService(diagComm));
-                ds->dereference(this);
+                auto ds = CreateRef<DiagService>(DiagService(diagComm, get_ref()));
+                ds->dereference();
                 m_diagServices[id] = ds;
             }
             else if (!strcmp(diagComm.name(), "DIAG-COMM-REF")) {
                 auto id = getIdRefFromXml(diagComm);
+                if (id.ends_with("GenerServi")) {
+                    continue;
+                }
                 auto doc = getDocRefFromXml(diagComm);
 
+                // Generic Service Doesn't Help Decode Messages
                 if (id.starts_with("DiagnServi")) {
                     m_diagServices[id] = PDX::get().getDiagServiceByDocAndId(doc, id);
                 }
@@ -1388,6 +1560,11 @@ namespace whale {
         return m_requests.at(id);
     }
 
+    Ref<Response> DiagLayerContainer::getResponseById(const String& id) const
+    {
+        return m_posResponses.at(id);
+    }
+
     Ref<DopBase> DiagLayerContainer::getDopById(const String& id) const
     {
         auto dopType = id.substr(0, 3);
@@ -1410,6 +1587,9 @@ namespace whale {
         else if (dopType == "DYN") {
             return getDynamicLengthFieldById(id);
         }
+        else if (dopType == "ENV") {
+            return getEnvDataDescById(id);
+        }
         return nullptr;
     }
 
@@ -1425,6 +1605,14 @@ namespace whale {
     {
         if (m_dtcDops.count(id)) {
             return m_dtcDops.at(id);
+        }
+        return nullptr;
+    }
+
+    Ref<EnvDataDesc> DiagLayerContainer::getEnvDataDescById(const String& id) const
+    {
+        if (m_envDataDescs.count(id)) {
+            return m_envDataDescs.at(id);
         }
         return nullptr;
     }
@@ -1565,8 +1753,38 @@ namespace whale {
 
     void DiagLayerContainer::dereference()
     {
+        for (auto& [_, dop] : m_dataObjectProps) {
+            dop->dereference();
+        }
         for (auto& [_, ds] : m_diagServices) {
-            ds->dereference(this);
+            ds->dereference();
+        }
+        for (auto& [_, static_field] : m_staticFields) {
+            static_field->dereference();
+        }
+        for (auto& [_, dyn_len_field] : m_dynamicLengthFields) {
+            dyn_len_field->dereference();
+        }
+        for (auto& [_, end_of_pdu_field] : m_endOfPduFields) {
+            end_of_pdu_field->dereference();
+        }
+        for (auto& [_, mux] : m_muxes) {
+            mux->dereference();
+        }
+        for (auto& [_, table] : m_tables) {
+            table->dereference();
+        }
+        for (auto& [_, request] : m_requests) {
+            request->dereference();
+        }
+        for (auto& [_, pos_response] : m_posResponses) {
+            pos_response->dereference();
+        }
+        for (auto& [_, neg_response] : m_negResponses) {
+            neg_response->dereference();
+        }
+        for (auto& [_, global_neg_response] : m_globalNegResponses) {
+            global_neg_response->dereference();
         }
     }
 
@@ -1914,8 +2132,9 @@ namespace whale {
 
         // WH_INFO("DLC {} in file map? {}", id, m_dlcFiles.count(id));
         if (m_dlcFiles.count(id)) {
-            auto dlc = CreateRef<DiagLayerContainer>(DiagLayerContainer(id));
-            //dlc->dereference();
+            auto dlc = CreateRef<DiagLayerContainer>(DiagLayerContainer());
+            dlc->initByID(id);
+            dlc->dereference();
             m_dlcMap[id] = dlc;
             WH_INFO("PDX added DLC        [{}]", id);
         }
@@ -2114,7 +2333,7 @@ namespace whale {
         return String();
     }
 
-    String LinearComputeMethod::decode(unsigned value)
+    Option<String> LinearComputeMethod::decode(unsigned value)
     {
         // !!!!! to fix 
         auto result = value * m_compuNumerators[0] + m_compuDenominator * m_compuNumerators[1];
@@ -2141,12 +2360,13 @@ namespace whale {
         return String();
     }
 
-    String TextTableComputeMethod::decode(unsigned value)
+    Option<String> TextTableComputeMethod::decode(unsigned value)
     {
         if (m_textTableCompuScales.count(value)) {
+            // consider not returning DiagnServi_ReadDataByIdentGenerServi
             return m_textTableCompuScales[value].m_vt;
         }
-        return String();
+        return std::nullopt;
     }
 
     Option<unsigned> TextTableComputeMethod::encode(const String& value)
@@ -2194,11 +2414,25 @@ namespace whale {
         return String();
     }
 
-    String IdenticalComputeMethod::decode(unsigned value)
+    Option<String> IdenticalComputeMethod::decode(unsigned value)
     {
         std::stringstream ss;
         ss << value;
         return ss.str();
     }
 
+    EnvDataDesc::EnvDataDesc(const pugi::xml_node& node, Ref<DiagLayerContainer> parent)
+        : DopBase(node, parent)
+    {
+    }
+
+    Option<unsigned> EnvDataDesc::encode(const String&)
+    {
+        return Option<unsigned>();
+    }
+
+    Option<String> EnvDataDesc::decode(const String& str, Option<unsigned> byte_position, Option<unsigned> bit_position)
+    {
+        return Option<String>();
+    }
 }
